@@ -22,6 +22,7 @@ const defaultAllowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
   'https://lake-pass-web.vercel.app',
+  'https://lake-pass-dashboard.vercel.app',
 ];
 
 const allowedOrigins = new Set([
@@ -29,10 +30,19 @@ const allowedOrigins = new Set([
   ...(process.env.ALLOWED_ORIGINS?.split(',') ?? []),
 ].map(origin => origin.trim()).filter(Boolean));
 
+const allowedOriginPatterns = [
+  /^https:\/\/lake-pass-web-[a-z0-9-]+\.vercel\.app$/,
+  /^https:\/\/lake-pass-dashboard-[a-z0-9-]+\.vercel\.app$/,
+];
+
+const isAllowedOrigin = (origin: string) => (
+  allowedOrigins.has(origin) || allowedOriginPatterns.some(pattern => pattern.test(origin))
+);
+
 app.use(helmet());
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    if (!origin || isAllowedOrigin(origin)) return callback(null, true);
     return callback(new Error(`Origin ${origin} is not allowed by CORS`));
   },
   credentials: true,
