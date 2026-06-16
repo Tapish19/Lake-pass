@@ -24,11 +24,11 @@ const UpdateMarinaSchema = z.object({
   address:     z.string().optional(),
   city:        z.string().optional(),
   state:       z.string().optional(),
-  latitude:    z.number().optional(),
-  longitude:   z.number().optional(),
+  latitude: z.number().nullable().optional(),
+  longitude: z.number().nullable().optional(),
   phone:       z.string().optional(),
   website:     z.string().url().optional(),
-  logoUrl:     z.string().url().optional(),
+  logoUrl: z.string().url().nullable().optional(),
   widgetColor: z.string().optional(),
 });
 
