@@ -54,14 +54,53 @@ export async function requireAuth(req: AuthRequest, _res: Response, next: NextFu
   next();
 }
 
+async function bootstrapFirstMarinaOwner(req: AuthRequest) {
+  if (!req.clerkId || req.marinaId) return;
+
+  const [staffCount, marinas] = await Promise.all([
+    prisma.staffMember.count(),
+    prisma.marina.findMany({
+      where: { isActive: true },
+      select: { id: true },
+      take: 2,
+    }),
+  ]);
+
+  if (staffCount !== 0 || marinas.length !== 1) return;
+
+  let staffMember;
+  try {
+    staffMember = await prisma.staffMember.create({
+      data: {
+        clerkId: req.clerkId,
+        marinaId: marinas[0].id,
+        role: 'owner',
+      },
+    });
+  } catch (error: any) {
+    if (error?.code !== 'P2002') {
+      throw error;
+    }
+
+    staffMember = await prisma.staffMember.findUnique({ where: { clerkId: req.clerkId } });
+  }
+
+  if (!staffMember) return;
+
+  req.marinaId  = staffMember.marinaId;
+  req.staffRole = staffMember.role;
+}
+
 /** Ensures the authenticated principal is staff for a marina. */
-export function requireMarinaStaff(req: AuthRequest, _res: Response, next: NextFunction) {
+export async function requireMarinaStaff(req: AuthRequest, _res: Response, next: NextFunction) {
+  await bootstrapFirstMarinaOwner(req);
   if (!req.marinaId) throw new AppError(403, 'Marina staff access required');
   next();
 }
 
 /** Ensures the authenticated principal is an owner of their marina. */
-export function requireMarinaOwner(req: AuthRequest, _res: Response, next: NextFunction) {
+export async function requireMarinaOwner(req: AuthRequest, _res: Response, next: NextFunction) {
+  await bootstrapFirstMarinaOwner(req);
   if (!req.marinaId || req.staffRole !== 'owner') throw new AppError(403, 'Marina owner access required');
   next();
 }
