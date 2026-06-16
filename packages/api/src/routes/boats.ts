@@ -55,8 +55,8 @@ router.get('/', async (req, res) => {
     ]);
 
     unavailableIds = [
-      ...conflicts.map(r => r.boatId),
-      ...blockouts.map(b => b.boatId),
+      ...conflicts.map((r: { boatId: string }) => r.boatId),
+      ...blockouts.map((b: { boatId: string }) => b.boatId),
     ];
   }
 
@@ -76,10 +76,10 @@ router.get('/', async (req, res) => {
   });
 
   // Attach computed avg rating so the mobile search card can display stars.
-  const enriched = boats.map(b => ({
+  const enriched = boats.map((b: any) => ({
     ...b,
     rating:      b.reviews.length
-      ? Math.round((b.reviews.reduce((s, r) => s + r.rating, 0) / b.reviews.length) * 10) / 10
+      ? Math.round((b.reviews.reduce((s: number, r: { rating: number }) => s + r.rating, 0) / b.reviews.length) * 10) / 10
       : null,
     reviewCount: b.reviews.length,
     reviews:     undefined,

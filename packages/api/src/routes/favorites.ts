@@ -13,7 +13,7 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     include: { boat: { include: { marina: { select: { name: true, lake: true } } } } },
     orderBy: { createdAt: 'desc' },
   });
-  res.json(favs.map(f => f.boat));
+  res.json(favs.map((f: any) => f.boat));
 });
 
 // POST /favorites/:boatId — toggle (add if not exists, remove if exists)

@@ -69,7 +69,7 @@ async function calcTotals(boatId: string, start: Date, end: Date, addonIds: stri
     : [];
 
   const rentalAmount  = boat.dailyRate * nights(start, end);
-  const addonAmount   = addons.reduce((s, a) => s + a.price, 0);
+  const addonAmount   = addons.reduce((s: number, a: { price: number }) => s + a.price, 0);
   const platformFee   = Math.round((rentalAmount + addonAmount) * 0.10 * 100) / 100;
   const totalAmount   = Math.round((rentalAmount + addonAmount + platformFee) * 100) / 100;
   const depositAmount = Math.round(totalAmount * 0.25 * 100) / 100;
@@ -101,7 +101,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
       notes: data.notes, status: 'pending',
       rentalAmount, addonAmount, platformFee, totalAmount, depositAmount,
       addons: {
-        create: addons.map(a => ({ addonId: a.id, name: a.name, price: a.price })),
+        create: addons.map((a: { id: string; name: string; price: number }) => ({ addonId: a.id, name: a.name, price: a.price })),
       },
     },
     include: { boat: { include: { marina: true } }, user: true, addons: true },
@@ -157,7 +157,7 @@ router.post('/walk-in', requireAuth, requireMarinaStaff, async (req: AuthRequest
       status: 'confirmed',
       walkInName: data.walkInName, walkInPhone: data.walkInPhone, walkInEmail: data.walkInEmail,
       rentalAmount, addonAmount, platformFee, totalAmount, depositAmount,
-      addons: { create: addons.map(a => ({ addonId: a.id, name: a.name, price: a.price })) },
+      addons: { create: addons.map((a: { id: string; name: string; price: number }) => ({ addonId: a.id, name: a.name, price: a.price })) },
     },
     include: { boat: { include: { marina: true } }, user: true, addons: true },
   });

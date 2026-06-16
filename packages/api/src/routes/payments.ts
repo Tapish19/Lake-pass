@@ -154,8 +154,8 @@ router.get('/summary', requireAuth, requireMarinaStaff, async (req: AuthRequest,
     where: { boat: { marinaId: req.marinaId }, paymentStatus: { in: ['paid','partially_refunded'] } },
     select: { totalAmount: true, createdAt: true },
   });
-  const monthRevenue = paid.filter(r => new Date(r.createdAt) >= monthStart).reduce((s, r) => s + (r.totalAmount ?? 0), 0);
-  const totalGross   = paid.reduce((s, r) => s + (r.totalAmount ?? 0), 0);
+  const monthRevenue = paid.filter((r: any) => new Date(r.createdAt) >= monthStart).reduce((s: number, r: any) => s + (r.totalAmount ?? 0), 0);
+  const totalGross   = paid.reduce((s: number, r: any) => s + (r.totalAmount ?? 0), 0);
   const pendingCount = await prisma.reservation.count({
     where: { boat: { marinaId: req.marinaId }, paymentStatus: 'unpaid', status: { in: ['pending','confirmed'] } },
   });

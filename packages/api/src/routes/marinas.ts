@@ -64,12 +64,12 @@ router.get('/:id/reports', requireAuth, requireMarinaStaff, async (req: AuthRequ
     }),
   ]);
 
-  const paid        = reservations.filter(r => r.paymentStatus === 'paid');
-  const totalRevenue = paid.reduce((s, r) => s + (r.totalAmount ?? 0), 0);
+  const paid        = reservations.filter((r: any) => r.paymentStatus === 'paid');
+  const totalRevenue = paid.reduce((s: number, r: any) => s + (r.totalAmount ?? 0), 0);
 
-  const utilization = boats.map(boat => {
-    const bookings = reservations.filter(r => r.boatId === boat.id && r.status !== 'cancelled');
-    const bookedDays = bookings.reduce((s, r) => {
+  const utilization = boats.map((boat: any) => {
+    const bookings = reservations.filter((r: any) => r.boatId === boat.id && r.status !== 'cancelled');
+    const bookedDays = bookings.reduce((s: number, r: any) => {
       return s + Math.max(1, Math.round((new Date(r.endDate).getTime() - new Date(r.startDate).getTime()) / 86_400_000));
     }, 0);
     return { boatId: boat.id, boatName: boat.name, bookedDays, bookingCount: bookings.length };
@@ -77,7 +77,7 @@ router.get('/:id/reports', requireAuth, requireMarinaStaff, async (req: AuthRequ
 
   res.json({
     totalRevenue:       Math.round(totalRevenue * 100) / 100,
-    totalBookings:      reservations.filter(r => r.status !== 'cancelled').length,
+    totalBookings:      reservations.filter((r: any) => r.status !== 'cancelled').length,
     activeBoats:        boats.length,
     utilization,
     recentReservations: reservations.slice(0, 20),
