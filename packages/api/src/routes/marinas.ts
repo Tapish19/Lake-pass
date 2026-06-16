@@ -12,8 +12,8 @@ const CreateMarinaSchema = z.object({
   address:   z.string(),
   city:      z.string(),
   state:     z.string(),
-  latitude:  z.number().optional(),
-  longitude: z.number().optional(),
+  latitude: z.number().nullable().optional(),
+  longitude: z.number().nullable().optional(),
   phone:     z.string().optional(),
   website:   z.string().url().optional(),
 });
