@@ -6,8 +6,9 @@ import type { StaffRole } from '@lake-pass/shared';
 
 export interface AuthRequest extends Request {
   userId?:    string;
-  clerkId?:   string;
-  marinaId?:  string;
+  clerkId?:    string;
+  clerkEmail?: string;
+  marinaId?:   string;
   staffRole?: StaffRole;
 }
 
@@ -28,14 +29,17 @@ export async function requireAuth(req: AuthRequest, _res: Response, next: NextFu
   if (!token) throw new AppError(401, 'Unauthorized — no Bearer token');
 
   let clerkId: string;
+  let clerkEmail: string | undefined;
   try {
     const payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! });
     clerkId = payload.sub;
+    clerkEmail = typeof payload.email === 'string' ? payload.email : undefined;
   } catch {
     throw new AppError(401, 'Invalid or expired session token');
   }
 
   req.clerkId = clerkId;
+  req.clerkEmail = clerkEmail;
 
   const [staffMember, user] = await Promise.all([
     prisma.staffMember.findUnique({ where: { clerkId } }),
@@ -54,6 +58,30 @@ export async function requireAuth(req: AuthRequest, _res: Response, next: NextFu
   next();
 }
 
+/**
+ * Optional production bootstrap: set MARINA_OWNER_CLERK_IDS or
+ * MARINA_OWNER_EMAILS (comma-separated) to let the configured account claim
+ * the single active marina even if a stale staff row already exists.
+ */
+function parseEnvList(value: string | undefined) {
+  return new Set(
+    (value ?? '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+function isConfiguredOwner(req: AuthRequest) {
+  if (!req.clerkId) return false;
+
+  const ownerClerkIds = parseEnvList(process.env.MARINA_OWNER_CLERK_IDS);
+  if (ownerClerkIds.has(req.clerkId.toLowerCase())) return true;
+
+  const ownerEmails = parseEnvList(process.env.MARINA_OWNER_EMAILS);
+  return !!req.clerkEmail && ownerEmails.has(req.clerkEmail.toLowerCase());
+}
+
 async function bootstrapFirstMarinaOwner(req: AuthRequest) {
   if (!req.clerkId || req.marinaId) return;
 
@@ -66,7 +94,9 @@ async function bootstrapFirstMarinaOwner(req: AuthRequest) {
     }),
   ]);
 
-  if (staffCount !== 0 || marinas.length !== 1) return;
+  const canClaimOnlyMarina = staffCount === 0 && marinas.length === 1;
+  const canUseConfiguredOwner = isConfiguredOwner(req) && marinas.length === 1;
+  if (!canClaimOnlyMarina && !canUseConfiguredOwner) return;
 
   let staffMember;
   try {
