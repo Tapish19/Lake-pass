@@ -100,13 +100,11 @@ async function bootstrapFirstMarinaOwner(req: AuthRequest) {
 
   let staffMember;
   try {
-    staffMember = await prisma.staffMember.create({
-      data: {
-        clerkId: req.clerkId,
-        marinaId: marinas[0].id,
-        role: 'owner',
-      },
-    });
+    staffMember = await prisma.staffMember.upsert({
+  where:  { clerkId: req.clerkId },
+  create: { clerkId: req.clerkId!, marinaId: marinas[0].id, role: 'owner' },
+  update: {},
+});
   } catch (error: any) {
     if (error?.code !== 'P2002') {
       throw error;
