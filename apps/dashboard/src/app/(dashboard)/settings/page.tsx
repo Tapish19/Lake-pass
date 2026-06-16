@@ -32,8 +32,11 @@ export default function SettingsPage() {
   useEffect(() => { if (marina) reset(marina); }, [marina, reset]);
 
   const saveMutation = useMutation({
-    mutationFn: (data: Partial<Marina>) => api.patch(`/marinas/${marina?.id}`, data),
-    onSuccess:  () => queryClient.invalidateQueries({ queryKey: ['me'] }),
+  mutationFn: (data: Partial<Marina>) => {
+      if (!marina?.id) return Promise.reject(new Error('Marina not loaded'));
+      return api.patch(`/marinas/${marina.id}`, data);
+ },    
+  onSuccess:  () => queryClient.invalidateQueries({ queryKey: ['me'] }),
   });
 
   const { data: stripeStatus } = useQuery<StripeStatus>({
@@ -88,7 +91,7 @@ export default function SettingsPage() {
               </div>
             </div>
             {saveMutation.isSuccess && <p className="text-sm text-green-600">Saved successfully.</p>}
-            <button type="submit" disabled={!isDirty || saveMutation.isPending}
+            <button type="submit" disabled={!isDirty || saveMutation.isPending || !marina?.id}
               className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50">
               {saveMutation.isPending ? 'Saving…' : 'Save Changes'}
             </button>
