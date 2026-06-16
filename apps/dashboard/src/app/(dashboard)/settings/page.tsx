@@ -33,6 +33,7 @@ export default function SettingsPage() {
 
   const saveMutation = useMutation({
   mutationFn: (data: Partial<Marina>) => {
+      console.log('PATCH payload', data);
       if (!marina?.id) return Promise.reject(new Error('Marina not loaded'));
       return api.patch(`/marinas/${marina.id}`, data);
  },    
