@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Marina {
+  id              String        @id @default(cuid())
+  name            String
+  lake            String
+  address         String
+  city            String
+  state           String
+  latitude        Float?
+  longitude       Float?
+  phone           String?
+  website         String?
+  logoUrl         String?
+  isActive        Boolean       @default(true)
+  stripeAccountId String?
+  widgetColor     String?       @default("#1d6fdb")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  boats           Boat[]
+  staff           StaffMember[]
+
+  @@map("marinas")
+}
+
+model Boat {
+  id           String     @id @default(cuid())
+  marinaId     String
+  name         String
+  type         String
+  capacity     Int
+  dailyRate    Float
+  hourlyRate   Float?
+  description  String?
+  amenities    String[]
+  photoUrls    String[]
+  isActive     Boolean    @default(true)
+  status       BoatStatus @default(available)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  marina       Marina       @relation(fields: [marinaId], references: [id])
+  reservations Reservation[]
+  reviews      Review[]
+  blockouts    Blockout[]
+  favorites    Favorite[]
+
+  @@map("boats")
+}
+
+enum BoatStatus {
+  available
+  booked
+  maintenance
+}
+
+model User {
+  id           String   @id @default(cuid())
+  clerkId      String   @unique
+  name         String
+  email        String   @unique
+  phone        String?
+  licenseUrl   String?
+  insuranceUrl String?
+  pushToken    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reservations Reservation[]
+  reviews      Review[]
+  favorites    Favorite[]
+
+  @@map("users")
+}
+
+model StaffMember {
+  id       String    @id @default(cuid())
+  marinaId String
+  clerkId  String    @unique
+  role     StaffRole @default(staff)
+
+  marina   Marina    @relation(fields: [marinaId], references: [id])
+
+  @@map("staff_members")
+}
+
+enum StaffRole {
+  owner
+  manager
+  staff
+}
+
+// ── Catalog of add-ons offered by a marina (tubes, captain, fuel, etc.) ──────
+model Addon {
+  id          String   @id @default(cuid())
+  marinaId    String
+  name        String
+  price       Float
+  description String?
+  createdAt   DateTime @default(now())
+
+  reservationAddons ReservationAddon[]
+
+  @@map("addons")
+}
+
+model Reservation {
+  id              String            @id @default(cuid())
+  boatId          String
+  userId          String
+  startDate       DateTime
+  endDate         DateTime
+  status          ReservationStatus @default(pending)
+  paymentStatus   PaymentStatus     @default(unpaid)
+  rentalAmount    Float?            // boat-only subtotal
+  addonAmount     Float?            // sum of selected add-ons
+  platformFee     Float?
+  totalAmount     Float?
+  depositAmount   Float?
+  notes           String?
+  // Walk-in / phone booking: name+phone recorded instead of a User account
+  walkInName      String?
+  walkInPhone     String?
+  walkInEmail     String?
+  waiverSignedAt  DateTime?
+  waiverIpAddress String?
+  stripeSessionId String?
+  checkedInAt     DateTime?
+  checkedOutAt    DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  boat             Boat               @relation(fields: [boatId], references: [id])
+  user             User               @relation(fields: [userId], references: [id])
+  addons           ReservationAddon[]
+  notifications    NotificationLog[]
+
+  @@map("reservations")
+}
+
+// Junction table — records which add-ons were chosen and their price at time of booking
+model ReservationAddon {
+  id            String @id @default(cuid())
+  reservationId String
+  addonId       String
+  name          String // snapshot
+  price         Float  // snapshot
+
+  reservation Reservation @relation(fields: [reservationId], references: [id])
+  addon       Addon       @relation(fields: [addonId], references: [id])
+
+  @@map("reservation_addons")
+}
+
+enum ReservationStatus {
+  pending
+  confirmed
+  checked_in
+  checked_out
+  cancelled
+  no_show
+}
+
+enum PaymentStatus {
+  unpaid
+  deposit_paid
+  paid
+  refunded
+  partially_refunded
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  boatId    String
+  userId    String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  boat Boat @relation(fields: [boatId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([boatId, userId]) // one review per user per boat
+  @@map("reviews")
+}
+
+model Blockout {
+  id        String   @id @default(cuid())
+  boatId    String
+  startDate DateTime
+  endDate   DateTime
+  reason    String?
+  createdAt DateTime @default(now())
+
+  boat Boat @relation(fields: [boatId], references: [id])
+
+  @@map("blockouts")
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  boatId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  boat Boat @relation(fields: [boatId], references: [id])
+
+  @@unique([userId, boatId])
+  @@map("favorites")
+}
+
+// Audit trail for automated emails/SMS sent per reservation
+model NotificationLog {
+  id            String   @id @default(cuid())
+  reservationId String
+  type          String   // confirmation | reminder | no_show | refund
+  channel       String   // email | sms
+  recipient     String
+  sentAt        DateTime @default(now())
+  error         String?
+
+  reservation Reservation @relation(fields: [reservationId], references: [id])
+
+  @@map("notification_logs")
+}

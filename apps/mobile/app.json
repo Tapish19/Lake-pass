@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Lake Pass",
+    "slug": "lake-pass",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1d6fdb"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lakepass.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1d6fdb"
+      },
+      "package": "com.lakepass.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-camera",
+      "expo-image-picker",
+      [
+        "expo-location",
+        { "locationAlwaysAndWhenInUsePermission": "Lake Pass needs location to show nearby marinas." }
+      ],
+      [
+        "expo-notifications",
+        { "icon": "./assets/notification-icon.png", "color": "#1d6fdb" }
+      ]
+    ],
+    "scheme": "lakepass"
+  }
+}
