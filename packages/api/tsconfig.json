@@ -2,7 +2,9 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "commonjs",
-    "lib": ["ES2020"],
+    "lib": [
+      "ES2020"
+    ],
     "outDir": "dist",
     "rootDir": "..",
     "strict": true,
@@ -10,9 +12,17 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "paths": {
-      "@lake-pass/shared": ["../shared/src"]
-    }
+      "@lake-pass/shared": [
+        "../shared/src"
+      ]
+    },
+    "noImplicitAny": false
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }
