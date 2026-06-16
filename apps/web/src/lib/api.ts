@@ -1,10 +1,14 @@
 import { demoAddons, demoBoats } from './demo';
 import type { Addon, BoatListing, Reservation } from './types';
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+
+export const API_URL = rawApiUrl.replace(/\/+$/, '').endsWith('/api')
+  ? rawApiUrl.replace(/\/+$/, '')
+  : `${rawApiUrl.replace(/\/+$/, '')}/api`;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, init);
+  const response = await fetch(`${API_URL}${path.startsWith('/') ? path : `/${path}`}`, init);
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error ?? 'Something went wrong');

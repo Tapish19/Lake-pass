@@ -18,9 +18,23 @@ import { errorHandler }   from './middleware/errorHandler';
 const app  = express();
 const PORT = process.env.PORT ?? 3001;
 
+const defaultAllowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://lake-pass-web.vercel.app',
+];
+
+const allowedOrigins = new Set([
+  ...defaultAllowedOrigins,
+  ...(process.env.ALLOWED_ORIGINS?.split(',') ?? []),
+].map(origin => origin.trim()).filter(Boolean));
+
 app.use(helmet());
 app.use(cors({
-  origin:      process.env.ALLOWED_ORIGINS?.split(',') ?? ['http://localhost:3000'],
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+  },
   credentials: true,
 }));
 app.use(morgan('dev'));
@@ -31,14 +45,19 @@ app.use(express.json({ limit: '2mb' }));
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
 
-app.use('/api/auth',         authRoutes);
-app.use('/api/marinas',      marinasRoutes);
-app.use('/api/boats',        boatsRoutes);
-app.use('/api/reservations', reservationsRoutes);
-app.use('/api/payments',     paymentsRoutes);
-app.use('/api/uploads',      uploadsRoutes);
-app.use('/api/addons',       addonsRoutes);
-app.use('/api/favorites',    favoritesRoutes);
+const registerRoutes = (prefix = '') => {
+  app.use(`${prefix}/auth`,         authRoutes);
+  app.use(`${prefix}/marinas`,      marinasRoutes);
+  app.use(`${prefix}/boats`,        boatsRoutes);
+  app.use(`${prefix}/reservations`, reservationsRoutes);
+  app.use(`${prefix}/payments`,     paymentsRoutes);
+  app.use(`${prefix}/uploads`,      uploadsRoutes);
+  app.use(`${prefix}/addons`,       addonsRoutes);
+  app.use(`${prefix}/favorites`,    favoritesRoutes);
+};
+
+registerRoutes('/api');
+registerRoutes();
 
 app.use(errorHandler);
 
