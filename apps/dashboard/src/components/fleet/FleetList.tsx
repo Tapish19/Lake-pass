@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import type { Boat } from '@lake-pass/shared';
@@ -43,7 +43,15 @@ function EditModal({ boat, onClose }: { boat: Boat; onClose: () => void }) {
     for (const file of files) {
       try {
         const { data } = await api.post('/uploads/presign', { category: 'boat-photos', mimeType: file.type });
-        await fetch(data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+        await fetch(data.uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: {
+            'Content-Type': file.type,
+            // Required by the presign URL: enforce server-side encryption
+            'x-amz-server-side-encryption': 'AES256',
+          },
+        });
         setPhotoUrls(prev => [...prev, data.publicUrl]);
       } catch { /* ignore individual failures */ }
     }
@@ -89,10 +97,9 @@ function EditModal({ boat, onClose }: { boat: Boat; onClose: () => void }) {
             <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea rows={3} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" {...register('description')} />
           </div>
-          {/* Photo management */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Photos</label>
-            <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhoto} />
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden" onChange={handlePhoto} />
             <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
               className="w-full border-2 border-dashed border-gray-200 rounded-lg p-3 text-sm text-gray-500 hover:border-brand-400 disabled:opacity-60">
               {uploading ? 'Uploading…' : '+ Add more photos'}
@@ -110,7 +117,6 @@ function EditModal({ boat, onClose }: { boat: Boat; onClose: () => void }) {
               </div>
             )}
           </div>
-
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose} className="flex-1 border border-gray-200 rounded-lg py-2 text-sm">Cancel</button>
             <button type="submit" disabled={saveMutation.isPending || uploading}
@@ -124,15 +130,66 @@ function EditModal({ boat, onClose }: { boat: Boat; onClose: () => void }) {
   );
 }
 
+/**
+ * useRealtimeBoats
+ *
+ * Subscribes to Supabase Realtime for live fleet updates.
+ * Falls back to a 30s refetch interval if NEXT_PUBLIC_SUPABASE_URL
+ * is not configured (local dev without Supabase).
+ *
+ * Supabase Realtime listens on the "boats" PostgreSQL table via logical
+ * replication. Any INSERT/UPDATE/DELETE triggers a query client invalidation
+ * so the UI re-fetches immediately.
+ */
+function useRealtimeBoats(queryClient: ReturnType<typeof useQueryClient>) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const channelRef  = useRef<any>(null);
+
+  useEffect(() => {
+    if (!supabaseUrl || !supabaseKey) return; // no Supabase configured
+
+    // Dynamically import to keep the bundle lean when Supabase isn't used
+    import('@supabase/supabase-js').then(({ createClient }) => {
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      const channel  = supabase
+        .channel('realtime:boats')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'boats' },
+          () => {
+            queryClient.invalidateQueries({ queryKey: ['boats'] });
+          },
+        )
+        .subscribe();
+
+      channelRef.current = { supabase, channel };
+    });
+
+    return () => {
+      channelRef.current?.supabase?.removeChannel(channelRef.current.channel);
+    };
+  }, [supabaseUrl, supabaseKey, queryClient]);
+}
+
 export default function FleetList() {
   const api         = useApi();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<Boat | null>(null);
 
+  // Subscribe to Supabase Realtime for push updates.
+  // When Supabase isn't configured, falls back to refetchInterval below.
+  useRealtimeBoats(queryClient);
+
+  const supabaseConfigured = !!(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+
   const { data: boats, isLoading, isError } = useQuery<Boat[]>({
     queryKey: ['boats', 'mine'],
     queryFn:  () => api.get('/boats/mine').then(r => r.data),
-    refetchInterval: 15_000, // real-time: poll every 15s
+    // Only poll when Supabase Realtime is not available
+    refetchInterval: supabaseConfigured ? false : 30_000,
   });
 
   const statusMutation = useMutation({
