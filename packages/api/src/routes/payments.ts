@@ -118,11 +118,25 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 });
 
 // ── POST /payments/onboard ────────────────────────────────────────────────────
-router.post('/onboard', requireAuth, requireMarinaOwner, async (_req, res) => {
-  res.json({
-    url: '/',
-    accountId: 'test-account'
+router.post('/onboard', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+  const marina = await prisma.marina.findUniqueOrThrow({ where: { id: req.marinaId! } });
+  let accountId = marina.stripeAccountId;
+  if (!accountId) {
+    const acct = await stripe.accounts.create({
+      type: 'express',
+      capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
+      metadata: { marinaId: marina.id },
+    });
+    accountId = acct.id;
+    await prisma.marina.update({ where: { id: marina.id }, data: { stripeAccountId: accountId } });
+  }
+  const link = await stripe.accountLinks.create({
+    account:     accountId,
+    refresh_url: `${process.env.DASHBOARD_URL}/settings?stripe=refresh`,
+    return_url:  `${process.env.DASHBOARD_URL}/settings?stripe=connected`,
+    type:        'account_onboarding',
   });
+  res.json({ url: link.url, accountId });
 });
 
 // ── GET /payments/stripe-status ───────────────────────────────────────────────
