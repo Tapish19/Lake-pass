@@ -59,7 +59,7 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOS
 const registerRoutes = (prefix = '') => {
   app.use(`${prefix}/auth`,                    authRoutes);
   app.use(`${prefix}/marinas`,                 marinasRoutes);
-  app.use(`${prefix}/marinas/:id/team`,        teamRoutes);
+  app.use(`${prefix}/team`,                    teamRoutes);
   app.use(`${prefix}/boats`,                   boatsRoutes);
   app.use(`${prefix}/reservations`,            reservationsRoutes);
   app.use(`${prefix}/payments`,                paymentsRoutes);
