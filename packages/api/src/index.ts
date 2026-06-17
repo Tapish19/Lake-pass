@@ -13,6 +13,7 @@ import paymentsRoutes     from './routes/payments';
 import uploadsRoutes      from './routes/uploads';
 import addonsRoutes       from './routes/addons';
 import favoritesRoutes    from './routes/favorites';
+import teamRoutes         from './routes/team';
 import { errorHandler }   from './middleware/errorHandler';
 
 const app  = express();
@@ -56,14 +57,15 @@ app.use(express.json({ limit: '2mb' }));
 app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }));
 
 const registerRoutes = (prefix = '') => {
-  app.use(`${prefix}/auth`,         authRoutes);
-  app.use(`${prefix}/marinas`,      marinasRoutes);
-  app.use(`${prefix}/boats`,        boatsRoutes);
-  app.use(`${prefix}/reservations`, reservationsRoutes);
-  app.use(`${prefix}/payments`,     paymentsRoutes);
-  app.use(`${prefix}/uploads`,      uploadsRoutes);
-  app.use(`${prefix}/addons`,       addonsRoutes);
-  app.use(`${prefix}/favorites`,    favoritesRoutes);
+  app.use(`${prefix}/auth`,                    authRoutes);
+  app.use(`${prefix}/marinas`,                 marinasRoutes);
+  app.use(`${prefix}/marinas/:id/team`,        teamRoutes);
+  app.use(`${prefix}/boats`,                   boatsRoutes);
+  app.use(`${prefix}/reservations`,            reservationsRoutes);
+  app.use(`${prefix}/payments`,                paymentsRoutes);
+  app.use(`${prefix}/uploads`,                 uploadsRoutes);
+  app.use(`${prefix}/addons`,                  addonsRoutes);
+  app.use(`${prefix}/favorites`,               favoritesRoutes);
 };
 
 registerRoutes('/api');
