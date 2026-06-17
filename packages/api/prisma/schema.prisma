@@ -92,6 +92,21 @@ model StaffMember {
 
   @@map("staff_members")
 }
+model StaffInvite {
+  id        String    @id @default(cuid())
+  marinaId  String
+  email     String
+  role      StaffRole @default(staff)
+
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+
+  @@index([marinaId])
+  @@index([email])
+  @@map("staff_invites")
+}
 
 enum StaffRole {
   owner
