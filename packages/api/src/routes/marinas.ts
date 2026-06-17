@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { requireAuth, requireMarinaStaff, requireMarinaManager, requireMarinaOwner, AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
-import teamRoutes from './team';
 
 const router = Router();
 
@@ -157,5 +156,5 @@ router.get('/:id/staff', requireAuth, requireMarinaManager, async (req: AuthRequ
   const members = await prisma.staffMember.findMany({ where: { marinaId: req.params.id } });
   res.json(members);
 });
-router.use('/:id/team', teamRoutes);
+
 export default router;
