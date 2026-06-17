@@ -119,14 +119,31 @@ async function bootstrapFirstMarinaOwner(req: AuthRequest) {
   req.staffRole = staffMember.role;
 }
 
-/** Ensures the authenticated principal is staff for a marina. */
+/** Ensures the authenticated principal is staff for a marina (any role). */
 export async function requireMarinaStaff(req: AuthRequest, _res: Response, next: NextFunction) {
   await bootstrapFirstMarinaOwner(req);
   if (!req.marinaId) throw new AppError(403, 'Marina staff access required');
   next();
 }
 
-/** Ensures the authenticated principal is an owner of their marina. */
+/**
+ * Ensures the authenticated principal is a manager or owner of their marina.
+ * Use for actions that dock staff should not perform: cancellations, refunds,
+ * walk-in bookings, no-show marking, and boat/add-on mutations.
+ */
+export async function requireMarinaManager(req: AuthRequest, _res: Response, next: NextFunction) {
+  await bootstrapFirstMarinaOwner(req);
+  if (!req.marinaId) throw new AppError(403, 'Marina staff access required');
+  if (req.staffRole !== 'owner' && req.staffRole !== 'manager') {
+    throw new AppError(403, 'Marina manager or owner access required');
+  }
+  next();
+}
+
+/**
+ * Ensures the authenticated principal is an owner of their marina.
+ * Use for admin-level actions: marina settings, Stripe onboarding, staff management.
+ */
 export async function requireMarinaOwner(req: AuthRequest, _res: Response, next: NextFunction) {
   await bootstrapFirstMarinaOwner(req);
   if (!req.marinaId || req.staffRole !== 'owner') throw new AppError(403, 'Marina owner access required');
