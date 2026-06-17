@@ -1,44 +1,112 @@
-/**
- * S3 pre-signed URL helper.
- * Install:  pnpm add @aws-sdk/client-s3 @aws-sdk/s3-request-presigner  (packages/api)
- *
- * The API never handles the file bytes itself — it just issues a short-lived
- * pre-signed PUT URL.  The client (dashboard or mobile app) uploads directly
- * to S3 using that URL, then POSTs the resulting public URL back to the API.
- * This keeps the API stateless and avoids large payloads.
- */
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import crypto from 'crypto';
 
 const s3 = new S3Client({
-  region:      process.env.AWS_REGION ?? 'us-east-1',
+  region: process.env.AWS_REGION ?? 'us-east-1',
   credentials: {
-    accessKeyId:     process.env.AWS_ACCESS_KEY_ID!,
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
 });
 
 const BUCKET = process.env.S3_BUCKET_NAME ?? 'lake-pass-uploads';
 
-export type UploadCategory = 'boat-photos' | 'licenses' | 'insurance';
+export type UploadCategory =
+  | 'boat-photos'
+  | 'licenses'
+  | 'insurance';
 
-/**
- * Returns a pre-signed PUT URL valid for 5 minutes.
- * The caller should PUT the file to this URL with the matching Content-Type,
- * then store the `publicUrl` returned here.
- */
-export async function getUploadUrl(category: UploadCategory, mimeType: string) {
-  const ext     = mimeType.split('/')[1] ?? 'bin';
-  const key     = `${category}/${crypto.randomUUID()}.${ext}`;
+export const ALLOWED_MIME: Record<
+  UploadCategory,
+  string[]
+> = {
+  'boat-photos': [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  ],
+
+  licenses: [
+    'image/jpeg',
+    'image/png',
+    'application/pdf',
+  ],
+
+  insurance: [
+    'image/jpeg',
+    'image/png',
+    'application/pdf',
+  ],
+};
+
+export const MAX_SIZE: Record<
+  UploadCategory,
+  number
+> = {
+  'boat-photos': 10 * 1024 * 1024,
+  licenses: 5 * 1024 * 1024,
+  insurance: 5 * 1024 * 1024,
+};
+
+const EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'application/pdf': 'pdf',
+};
+
+export async function getUploadUrl(
+  category: UploadCategory,
+  mimeType: string
+) {
+  const allowed = ALLOWED_MIME[category];
+
+  if (!allowed.includes(mimeType)) {
+    throw new Error(
+      `Invalid file type: ${mimeType}`
+    );
+  }
+
+  const extension =
+    EXTENSIONS[mimeType] ?? 'bin';
+
+  const key =
+    `${category}/${crypto.randomUUID()}.${extension}`;
+
   const command = new PutObjectCommand({
-    Bucket:      BUCKET,
-    Key:         key,
+    Bucket: BUCKET,
+    Key: key,
     ContentType: mimeType,
+
+    // Enforce SSE-S3
+    ServerSideEncryption: 'AES256',
   });
 
-  const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
-  const publicUrl = `https://${BUCKET}.s3.${process.env.AWS_REGION ?? 'us-east-1'}.amazonaws.com/${key}`;
+  const uploadUrl = await getSignedUrl(
+    s3,
+    command,
+    {
+      expiresIn: 300,
+    }
+  );
 
-  return { uploadUrl, publicUrl, key };
+  const region =
+    process.env.AWS_REGION ?? 'us-east-1';
+
+  const publicUrl =
+    `https://${BUCKET}.s3.${region}.amazonaws.com/${key}`;
+
+  return {
+    uploadUrl,
+    publicUrl,
+    key,
+    maxSizeBytes: MAX_SIZE[category],
+    requiredHeaders: {
+      'Content-Type': mimeType,
+      'x-amz-server-side-encryption': 'AES256',
+    },
+  };
 }
+
+export default s3;
