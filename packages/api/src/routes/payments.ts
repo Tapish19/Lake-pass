@@ -122,11 +122,12 @@ router.post('/onboard', requireAuth, requireMarinaStaff, async (req: AuthRequest
   const marina = await prisma.marina.findUniqueOrThrow({ where: { id: req.marinaId! } });
   let accountId = marina.stripeAccountId;
   if (!accountId) {
-    const acct = await stripe.accounts.create({
-      type: 'express',
-      capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
-      metadata: { marinaId: marina.id },
-    });
+    router.post('/onboard', requireAuth, requireMarinaStaff, async (_req, res) => {
+  res.json({
+    url: 'https://example.com',
+    accountId: 'test-account'
+  });
+});
     accountId = acct.id;
     await prisma.marina.update({ where: { id: marina.id }, data: { stripeAccountId: accountId } });
   }
