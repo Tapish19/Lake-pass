@@ -27,6 +27,7 @@ model Marina {
 
   boats           Boat[]
   staff           StaffMember[]
+  invites         StaffInvite[]
 
   @@map("marinas")
 }
