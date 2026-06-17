@@ -72,6 +72,9 @@ model User {
   licenseUrl   String?
   insuranceUrl String?
   pushToken    String?
+  // GDPR/CCPA compliance
+  deletedAt    DateTime?   // soft-delete: set on erasure request
+  dataExportRequestedAt DateTime? // last data export request
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -92,12 +95,12 @@ model StaffMember {
 
   @@map("staff_members")
 }
+
 model StaffInvite {
   id        String    @id @default(cuid())
   marinaId  String
   email     String
   role      StaffRole @default(staff)
-
   expiresAt DateTime
   createdAt DateTime  @default(now())
 
@@ -114,7 +117,6 @@ enum StaffRole {
   staff
 }
 
-// ── Catalog of add-ons offered by a marina (tubes, captain, fuel, etc.) ──────
 model Addon {
   id          String   @id @default(cuid())
   marinaId    String
@@ -136,19 +138,24 @@ model Reservation {
   endDate         DateTime
   status          ReservationStatus @default(pending)
   paymentStatus   PaymentStatus     @default(unpaid)
-  rentalAmount    Float?            // boat-only subtotal
-  addonAmount     Float?            // sum of selected add-ons
+  rentalAmount    Float?
+  addonAmount     Float?
   platformFee     Float?
   totalAmount     Float?
   depositAmount   Float?
   notes           String?
-  // Walk-in / phone booking: name+phone recorded instead of a User account
   walkInName      String?
   walkInPhone     String?
   walkInEmail     String?
-  waiverSignedAt  DateTime?
-  waiverIpAddress String?
-  stripeSessionId String?
+  // Waiver — legally defensible: store exactly what was agreed to
+  waiverSignedAt      DateTime?
+  waiverIpAddress     String?
+  waiverSignerName    String?
+  waiverVersion       String?   // e.g. "2024-v1"
+  waiverTextSnapshot  String?   // full text of waiver at time of signing
+  // Stripe
+  stripeSessionId         String?
+  securityDepositHoldId   String?  // PaymentIntent ID for manual-capture hold
   checkedInAt     DateTime?
   checkedOutAt    DateTime?
   createdAt       DateTime          @default(now())
@@ -162,13 +169,12 @@ model Reservation {
   @@map("reservations")
 }
 
-// Junction table — records which add-ons were chosen and their price at time of booking
 model ReservationAddon {
   id            String @id @default(cuid())
   reservationId String
   addonId       String
-  name          String // snapshot
-  price         Float  // snapshot
+  name          String
+  price         Float
 
   reservation Reservation @relation(fields: [reservationId], references: [id])
   addon       Addon       @relation(fields: [addonId], references: [id])
@@ -204,7 +210,7 @@ model Review {
   boat Boat @relation(fields: [boatId], references: [id])
   user User @relation(fields: [userId], references: [id])
 
-  @@unique([boatId, userId]) // one review per user per boat
+  @@unique([boatId, userId])
   @@map("reviews")
 }
 
@@ -234,12 +240,11 @@ model Favorite {
   @@map("favorites")
 }
 
-// Audit trail for automated emails/SMS sent per reservation
 model NotificationLog {
   id            String   @id @default(cuid())
   reservationId String
-  type          String   // confirmation | reminder | no_show | refund
-  channel       String   // email | sms
+  type          String
+  channel       String
   recipient     String
   sentAt        DateTime @default(now())
   error         String?
@@ -247,4 +252,18 @@ model NotificationLog {
   reservation Reservation @relation(fields: [reservationId], references: [id])
 
   @@map("notification_logs")
+}
+
+// Audit log for GDPR/CCPA requests
+model ComplianceRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // "deletion" | "export"
+  status    String   @default("pending") // "pending" | "completed" | "failed"
+  createdAt DateTime @default(now())
+  completedAt DateTime?
+  notes     String?
+
+  @@index([userId])
+  @@map("compliance_requests")
 }
