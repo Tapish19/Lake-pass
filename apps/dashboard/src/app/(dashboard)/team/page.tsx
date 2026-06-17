@@ -78,7 +78,7 @@ export default function TeamPage() {
   });
 
   const cancelInviteMutation = useMutation({
-    mutationFn: (inviteId: string) => api.delete(`/team/invites/${inviteId}`),
+    mutationFn: (inviteId: string) => api.delete(`/team/${inviteId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['team'] }),
   });
 
