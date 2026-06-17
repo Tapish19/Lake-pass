@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
-import { requireAuth, requireMarinaStaff, AuthRequest } from '../middleware/auth';
+import { requireAuth, requireMarinaStaff, requireMarinaManager, AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
@@ -112,23 +112,38 @@ router.get('/:id', async (req, res) => {
 });
 
 // ─── POST /boats ─────────────────────────────────────────────────────────────
-router.post('/', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+router.post('/', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const data = CreateBoatSchema.parse(req.body);
   const boat = await prisma.boat.create({ data: { ...data, marinaId: req.marinaId! } });
   res.status(201).json(boat);
 });
 
 // ─── PATCH /boats/:id ────────────────────────────────────────────────────────
+// Manager+ can edit all fields. Staff can update status only (available/booked/maintenance).
 router.patch('/:id', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
   const existing = await prisma.boat.findUniqueOrThrow({ where: { id: req.params.id } });
   if (existing.marinaId !== req.marinaId) throw new AppError(403, 'You do not manage this boat');
+
+  const isManagerOrAbove = req.staffRole === 'owner' || req.staffRole === 'manager';
+
+  // Staff (non-manager) may only update the status field
+  if (!isManagerOrAbove) {
+    const allowedKeys = Object.keys(req.body).filter(k => k !== 'status');
+    if (allowedKeys.length > 0) {
+      throw new AppError(403, 'Staff may only update boat status — manager or owner required for other fields');
+    }
+    const { status } = z.object({ status: z.enum(['available', 'booked', 'maintenance']) }).parse(req.body);
+    const boat = await prisma.boat.update({ where: { id: req.params.id }, data: { status } });
+    return res.json(boat);
+  }
+
   const data = UpdateBoatSchema.parse(req.body);
   const boat = await prisma.boat.update({ where: { id: req.params.id }, data });
   res.json(boat);
 });
 
 // ─── DELETE /boats/:id ───────────────────────────────────────────────────────
-router.delete('/:id', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+router.delete('/:id', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const existing = await prisma.boat.findUniqueOrThrow({ where: { id: req.params.id } });
   if (existing.marinaId !== req.marinaId) throw new AppError(403, 'You do not manage this boat');
   await prisma.boat.update({ where: { id: req.params.id }, data: { isActive: false } });
@@ -143,7 +158,7 @@ const BlockoutSchema = z.object({
   reason:    z.string().optional(),
 });
 
-router.post('/:id/blockouts', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+router.post('/:id/blockouts', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const existing = await prisma.boat.findUniqueOrThrow({ where: { id: req.params.id } });
   if (existing.marinaId !== req.marinaId) throw new AppError(403, 'You do not manage this boat');
 
@@ -157,7 +172,7 @@ router.post('/:id/blockouts', requireAuth, requireMarinaStaff, async (req: AuthR
 });
 
 // ─── DELETE /boats/:id/blockouts/:blockoutId ─────────────────────────────────
-router.delete('/:id/blockouts/:blockoutId', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+router.delete('/:id/blockouts/:blockoutId', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const blockout = await prisma.blockout.findUniqueOrThrow({ where: { id: req.params.blockoutId } });
   const boat     = await prisma.boat.findUniqueOrThrow({ where: { id: blockout.boatId } });
   if (boat.marinaId !== req.marinaId) throw new AppError(403, 'You do not manage this boat');
