@@ -13,6 +13,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "express-rate-limit": "^7.5.0"
     "@clerk/backend": "^1.18.0",
     "@lake-pass/shared": "workspace:*",
     "@prisma/client": "^5.14.0",
