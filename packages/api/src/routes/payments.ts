@@ -3,7 +3,7 @@ import express from 'express';
 import Stripe from 'stripe';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
-import { requireAuth, requireMarinaStaff, AuthRequest } from '../middleware/auth';
+import { requireAuth, requireMarinaStaff, requireMarinaManager, requireMarinaOwner, AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
@@ -118,7 +118,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 });
 
 // ── POST /payments/onboard ────────────────────────────────────────────────────
-router.post('/onboard', requireAuth, requireMarinaStaff, async (_req, res) => {
+router.post('/onboard', requireAuth, requireMarinaOwner, async (_req, res) => {
   res.json({
     url: '/',
     accountId: 'test-account'
@@ -126,7 +126,7 @@ router.post('/onboard', requireAuth, requireMarinaStaff, async (_req, res) => {
 });
 
 // ── GET /payments/stripe-status ───────────────────────────────────────────────
-router.get('/stripe-status', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+router.get('/stripe-status', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const marina = await prisma.marina.findUniqueOrThrow({ where: { id: req.marinaId! } });
   if (!marina.stripeAccountId) return res.json({ connected: false });
   const acct = await stripe.accounts.retrieve(marina.stripeAccountId);
@@ -134,7 +134,7 @@ router.get('/stripe-status', requireAuth, requireMarinaStaff, async (req: AuthRe
 });
 
 // ── GET /payments/summary ─────────────────────────────────────────────────────
-router.get('/summary', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+router.get('/summary', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
   const paid = await prisma.reservation.findMany({
     where: { boat: { marinaId: req.marinaId }, paymentStatus: { in: ['paid','partially_refunded'] } },
@@ -153,8 +153,8 @@ router.get('/summary', requireAuth, requireMarinaStaff, async (req: AuthRequest,
   });
 });
 
-// ── POST /payments/refund (staff) ─────────────────────────────────────────────
-router.post('/refund', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+// ── POST /payments/refund (manager+) ─────────────────────────────────────────
+router.post('/refund', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const { reservationId, amountCents, reason } = z.object({
     reservationId: z.string(),
     amountCents:   z.number().int().positive().optional(), // omit = full refund
@@ -188,8 +188,8 @@ router.post('/refund', requireAuth, requireMarinaStaff, async (req: AuthRequest,
   res.json({ refundId: refund.id, amount: refund.amount, status: refund.status });
 });
 
-// ── POST /payments/damage-fee (staff) ─────────────────────────────────────────
-router.post('/damage-fee', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+// ── POST /payments/damage-fee (manager+) ──────────────────────────────────────
+router.post('/damage-fee', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const { reservationId, amountCents, description } = z.object({
     reservationId: z.string(),
     amountCents:   z.number().int().positive(),
