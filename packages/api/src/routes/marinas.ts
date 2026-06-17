@@ -157,5 +157,5 @@ router.get('/:id/staff', requireAuth, requireMarinaManager, async (req: AuthRequ
   const members = await prisma.staffMember.findMany({ where: { marinaId: req.params.id } });
   res.json(members);
 });
-
+router.use('/:id/team', teamRoutes);
 export default router;
