@@ -120,7 +120,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 // ── POST /payments/onboard ────────────────────────────────────────────────────
 router.post('/onboard', requireAuth, requireMarinaStaff, async (_req, res) => {
   res.json({
-    url: 'https://example.com',
+    url: '/',
     accountId: 'test-account'
   });
 });
