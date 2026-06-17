@@ -21,39 +21,30 @@ const UpdateBoatSchema = CreateBoatSchema.partial().extend({
   status: z.enum(['available', 'booked', 'maintenance']).optional(),
 });
 
-// ─── GET /boats ─────────────────────────────────────────────────────────────
-// Public. Supports ?marinaId, ?type, ?date, ?guests query params.
-// When ?date is given, boats with a conflicting reservation OR blockout are
-// excluded so the result reflects true real-time availability.
+// ─── GET /boats ──────────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   const { marinaId, type, date, guests } = req.query;
-
   let unavailableIds: string[] = [];
 
   if (date) {
-    const day       = new Date(String(date));
+    const day        = new Date(String(date));
     const startOfDay = new Date(day); startOfDay.setHours(0,  0,  0, 0);
     const endOfDay   = new Date(day); endOfDay.setHours(23, 59, 59, 999);
 
     const [conflicts, blockouts] = await Promise.all([
       prisma.reservation.findMany({
         where: {
-          status:    { in: ['pending', 'confirmed', 'checked_in'] },
+          status: { in: ['pending', 'confirmed', 'checked_in'] },
           startDate: { lt: endOfDay },
           endDate:   { gt: startOfDay },
         },
         select: { boatId: true },
       }),
-      // ← blockout table is now checked here
       prisma.blockout.findMany({
-        where: {
-          startDate: { lt: endOfDay },
-          endDate:   { gt: startOfDay },
-        },
+        where: { startDate: { lt: endOfDay }, endDate: { gt: startOfDay } },
         select: { boatId: true },
       }),
     ]);
-
     unavailableIds = [
       ...conflicts.map(r => r.boatId),
       ...blockouts.map(b => b.boatId),
@@ -75,7 +66,6 @@ router.get('/', async (req, res) => {
     orderBy: { dailyRate: 'asc' },
   });
 
-  // Attach computed avg rating so the mobile search card can display stars.
   const enriched = boats.map(b => ({
     ...b,
     rating:      b.reviews.length
@@ -89,7 +79,6 @@ router.get('/', async (req, res) => {
 });
 
 // ─── GET /boats/mine ─────────────────────────────────────────────────────────
-// Staff-only: all boats belonging to the requester's marina.
 router.get('/mine', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
   const boats = await prisma.boat.findMany({
     where:   { marinaId: req.marinaId },
@@ -103,8 +92,8 @@ router.get('/:id', async (req, res) => {
   const boat = await prisma.boat.findUniqueOrThrow({
     where:   { id: req.params.id },
     include: {
-      marina:   true,
-      reviews:  { include: { user: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, take: 20 },
+      marina:    true,
+      reviews:   { include: { user: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' }, take: 20 },
       blockouts: { where: { endDate: { gte: new Date() } }, orderBy: { startDate: 'asc' } },
     },
   });
@@ -118,28 +107,73 @@ router.post('/', requireAuth, requireMarinaManager, async (req: AuthRequest, res
   res.status(201).json(boat);
 });
 
+// ─── POST /boats/import-csv ───────────────────────────────────────────────────
+// Backend CSV import: receives pre-parsed rows from the dashboard component
+// and bulk-creates boats. Validates each row server-side so the dashboard
+// can't bypass validation by posting raw data.
+const CsvRowSchema = z.object({
+  name:        z.string().min(1),
+  type:        z.string().min(1),
+  capacity:    z.coerce.number().int().positive(),
+  dailyRate:   z.coerce.number().positive(),
+  hourlyRate:  z.coerce.number().positive().optional(),
+  description: z.string().optional(),
+  amenities:   z.string().optional(), // semicolon-separated, parsed here
+});
+
+router.post('/import-csv', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
+  const { rows } = z.object({ rows: z.array(z.record(z.string())) }).parse(req.body);
+
+  if (!rows.length) throw new AppError(400, 'No rows provided');
+  if (rows.length > 500) throw new AppError(400, 'Maximum 500 boats per import');
+
+  const results: { success: boolean; name: string; error?: string }[] = [];
+
+  for (const raw of rows) {
+    try {
+      const parsed = CsvRowSchema.parse(raw);
+      await prisma.boat.create({
+        data: {
+          marinaId:    req.marinaId!,
+          name:        parsed.name,
+          type:        parsed.type,
+          capacity:    parsed.capacity,
+          dailyRate:   parsed.dailyRate,
+          hourlyRate:  parsed.hourlyRate,
+          description: parsed.description,
+          amenities:   parsed.amenities
+            ? parsed.amenities.split(';').map(s => s.trim()).filter(Boolean)
+            : [],
+          photoUrls: [],
+        },
+      });
+      results.push({ success: true, name: parsed.name });
+    } catch (err: any) {
+      results.push({ success: false, name: String(raw.name ?? '?'), error: err?.message ?? 'Unknown error' });
+    }
+  }
+
+  const created = results.filter(r => r.success).length;
+  const failed  = results.filter(r => !r.success).length;
+
+  res.status(201).json({ created, failed, results });
+});
+
 // ─── PATCH /boats/:id ────────────────────────────────────────────────────────
-// Manager+ can edit all fields. Staff can update status only (available/booked/maintenance).
 router.patch('/:id', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
   const existing = await prisma.boat.findUniqueOrThrow({ where: { id: req.params.id } });
   if (existing.marinaId !== req.marinaId) throw new AppError(403, 'You do not manage this boat');
 
   const isManagerOrAbove = req.staffRole === 'owner' || req.staffRole === 'manager';
-
-  // Staff (non-manager) may only update the status field
   if (!isManagerOrAbove) {
-    const allowedKeys = Object.keys(req.body).filter(k => k !== 'status');
-    if (allowedKeys.length > 0) {
-      throw new AppError(403, 'Staff may only update boat status — manager or owner required for other fields');
-    }
+    const nonStatusKeys = Object.keys(req.body).filter(k => k !== 'status');
+    if (nonStatusKeys.length > 0) throw new AppError(403, 'Staff may only update boat status');
     const { status } = z.object({ status: z.enum(['available', 'booked', 'maintenance']) }).parse(req.body);
-    const boat = await prisma.boat.update({ where: { id: req.params.id }, data: { status } });
-    return res.json(boat);
+    return res.json(await prisma.boat.update({ where: { id: req.params.id }, data: { status } }));
   }
 
   const data = UpdateBoatSchema.parse(req.body);
-  const boat = await prisma.boat.update({ where: { id: req.params.id }, data });
-  res.json(boat);
+  res.json(await prisma.boat.update({ where: { id: req.params.id }, data }));
 });
 
 // ─── DELETE /boats/:id ───────────────────────────────────────────────────────
@@ -151,7 +185,6 @@ router.delete('/:id', requireAuth, requireMarinaManager, async (req: AuthRequest
 });
 
 // ─── POST /boats/:id/blockouts ───────────────────────────────────────────────
-// Staff creates a maintenance / blocked window.
 const BlockoutSchema = z.object({
   startDate: z.coerce.date(),
   endDate:   z.coerce.date(),
@@ -161,13 +194,9 @@ const BlockoutSchema = z.object({
 router.post('/:id/blockouts', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const existing = await prisma.boat.findUniqueOrThrow({ where: { id: req.params.id } });
   if (existing.marinaId !== req.marinaId) throw new AppError(403, 'You do not manage this boat');
-
   const data = BlockoutSchema.parse(req.body);
   if (data.endDate <= data.startDate) throw new AppError(400, 'endDate must be after startDate');
-
-  const blockout = await prisma.blockout.create({
-    data: { boatId: req.params.id, ...data },
-  });
+  const blockout = await prisma.blockout.create({ data: { boatId: req.params.id, ...data } });
   res.status(201).json(blockout);
 });
 
@@ -176,7 +205,6 @@ router.delete('/:id/blockouts/:blockoutId', requireAuth, requireMarinaManager, a
   const blockout = await prisma.blockout.findUniqueOrThrow({ where: { id: req.params.blockoutId } });
   const boat     = await prisma.boat.findUniqueOrThrow({ where: { id: blockout.boatId } });
   if (boat.marinaId !== req.marinaId) throw new AppError(403, 'You do not manage this boat');
-
   await prisma.blockout.delete({ where: { id: req.params.blockoutId } });
   res.status(204).send();
 });
@@ -189,21 +217,12 @@ const ReviewSchema = z.object({
 
 router.post('/:id/reviews', requireAuth, async (req: AuthRequest, res) => {
   if (!req.userId) throw new AppError(403, 'Consumer account required');
-
-  // Consumer must have a completed reservation for this boat.
   const completed = await prisma.reservation.findFirst({
-    where: {
-      boatId: req.params.id,
-      userId: req.userId,
-      status: 'checked_out',
-    },
+    where: { boatId: req.params.id, userId: req.userId, status: 'checked_out' },
   });
   if (!completed) throw new AppError(403, 'You can only review boats you have rented');
-
   const data   = ReviewSchema.parse(req.body);
-  const review = await prisma.review.create({
-    data: { boatId: req.params.id, userId: req.userId, ...data },
-  });
+  const review = await prisma.review.create({ data: { boatId: req.params.id, userId: req.userId, ...data } });
   res.status(201).json(review);
 });
 
