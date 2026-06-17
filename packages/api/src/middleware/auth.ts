@@ -154,6 +154,26 @@ export async function requireMarinaStaff(req: AuthRequest, _res: Response, next:
   if (!req.marinaId) throw new AppError(403, 'Marina staff access required');
   next();
 }
+export async function requireMarinaManager(
+  req: AuthRequest,
+  _res: Response,
+  next: NextFunction
+) {
+  await bootstrapFirstMarinaOwner(req);
+
+  if (!req.marinaId) {
+    throw new AppError(403, 'Marina staff access required');
+  }
+
+  if (
+    req.staffRole !== 'owner' &&
+    req.staffRole !== 'manager'
+  ) {
+    throw new AppError(403, 'Manager access required');
+  }
+
+  next();
+}
 
 /** Ensures the authenticated principal is an owner of their marina. */
 export async function requireMarinaOwner(req: AuthRequest, _res: Response, next: NextFunction) {
