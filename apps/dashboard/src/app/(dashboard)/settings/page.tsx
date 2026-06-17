@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@clerk/nextjs';
 import { useForm } from 'react-hook-form';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useApi } from '@/lib/useApi';
 
 interface Marina {
@@ -16,9 +16,10 @@ interface StripeStatus {
 }
 
 export default function SettingsPage() {
-  const api         = useApi();
+  const api          = useApi();
   const { isLoaded } = useAuth();
-  const queryClient = useQueryClient();
+  const queryClient  = useQueryClient();
+  const [copied, setCopied] = useState(false);
 
   const { data: me } = useQuery<{ staff?: { marina: Marina } }>({
     queryKey: ['me'],
@@ -32,11 +33,11 @@ export default function SettingsPage() {
   useEffect(() => { if (marina) reset(marina); }, [marina, reset]);
 
   const saveMutation = useMutation({
-  mutationFn: (data: Partial<Marina>) => {
+    mutationFn: (data: Partial<Marina>) => {
       if (!marina?.id) return Promise.reject(new Error('Marina not loaded'));
       return api.patch(`/marinas/${marina.id}`, data);
- },    
-  onSuccess:  () => queryClient.invalidateQueries({ queryKey: ['me'] }),
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me'] }),
   });
 
   const { data: stripeStatus } = useQuery<StripeStatus>({
@@ -52,8 +53,27 @@ export default function SettingsPage() {
     },
   });
 
-  const widgetUrl  = marina ? `${typeof window !== 'undefined' ? window.location.origin : ''}/widget/${marina.id}` : '';
-  const embedCode  = `<iframe src="${widgetUrl}" width="420" height="520" frameborder="0" style="border-radius:16px;"></iframe>`;
+  const origin    = typeof window !== 'undefined' ? window.location.origin : '';
+  const widgetUrl = marina ? `${origin}/widget/${marina.id}` : '';
+  const embedCode = `<iframe src="${widgetUrl}" width="420" height="520" frameborder="0" style="border-radius:16px;"></iframe>`;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(embedCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback for browsers without clipboard API
+      const el = document.createElement('textarea');
+      el.value = embedCode;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
     <div>
@@ -123,30 +143,37 @@ export default function SettingsPage() {
           )}
         </section>
 
-        {/* Booking Widget */}
+        {/* Booking Widget — with copy-to-clipboard button */}
         {marina && (
           <section className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-1">Booking Widget</h2>
             <p className="text-sm text-gray-500 mb-3">
               Paste this snippet into your marina website so visitors can book directly.
             </p>
-            <div className="bg-gray-50 rounded-lg p-3 font-mono text-xs text-gray-700 break-all select-all mb-3">
+            <div className="bg-gray-50 rounded-lg p-3 font-mono text-xs text-gray-700 break-all mb-3">
               {embedCode}
             </div>
-            <a href={widgetUrl} target="_blank" rel="noopener noreferrer"
-              className="text-sm text-brand-600 hover:underline">
-              Preview widget ↗
-            </a>
+            <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={handleCopy}
+                className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700 transition-colors flex items-center gap-2"
+              >
+                {copied ? '✓ Copied!' : '📋 Copy Embed Code'}
+              </button>
+              <a href={widgetUrl} target="_blank" rel="noopener noreferrer"
+                className="border border-gray-200 px-4 py-2 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                Preview widget ↗
+              </a>
+            </div>
           </section>
         )}
 
         {/* Team & Roles */}
         <section className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Team &amp; Roles</h2>
-          <p className="text-sm text-gray-400">
-            Add staff by inviting them through your Clerk dashboard and inserting a
-            <code className="mx-1 bg-gray-100 px-1 rounded text-xs">StaffMember</code>
-            row with their Clerk ID and this marina's ID. Full team-management UI is planned for Phase 2.
+          <p className="text-sm text-gray-500">
+            Invite team members via the Team page. Staff members log in with their own Clerk account
+            and are automatically linked when their email matches an active invite.
           </p>
         </section>
       </div>
