@@ -9,13 +9,34 @@ interface CsvRow {
   hourlyRate?: string; description?: string; amenities?: string;
 }
 
-const REQUIRED_COLS = ['name','type','capacity','dailyRate'];
+const REQUIRED_COLS = ['name','type','capacity','dailyrate'];
+
+function parseCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
+  const lines   = text.trim().split('\n').filter(Boolean);
+  const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
+  const rows    = lines.slice(1).map(line => {
+    // Handle quoted fields with commas inside them
+    const vals: string[] = [];
+    let current = '';
+    let inQuote = false;
+    for (const ch of line) {
+      if (ch === '"') { inQuote = !inQuote; continue; }
+      if (ch === ',' && !inQuote) { vals.push(current.trim()); current = ''; continue; }
+      current += ch;
+    }
+    vals.push(current.trim());
+    const row: Record<string, string> = {};
+    headers.forEach((h, i) => { row[h] = vals[i] ?? ''; });
+    return row;
+  });
+  return { headers, rows };
+}
 
 export default function CsvImport() {
-  const [open, setOpen]         = useState(false);
-  const [rows, setRows]         = useState<CsvRow[]>([]);
-  const [error, setError]       = useState('');
-  const [preview, setPreview]   = useState(false);
+  const [open, setOpen]       = useState(false);
+  const [rows, setRows]       = useState<CsvRow[]>([]);
+  const [error, setError]     = useState('');
+  const [preview, setPreview] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const api         = useApi();
   const queryClient = useQueryClient();
@@ -24,39 +45,45 @@ export default function CsvImport() {
     const file = e.target.files?.[0];
     if (!file) return;
     setError('');
-    const text = await file.text();
-    // Dynamically import PapaParse (already in api package; here we use a tiny inline parser)
-    const lines = text.trim().split('\n');
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g,'').toLowerCase());
-    const missing = REQUIRED_COLS.filter(c => !headers.includes(c));
-    if (missing.length) { setError(`Missing required columns: ${missing.join(', ')}`); return; }
 
-    const parsed: CsvRow[] = lines.slice(1).filter(Boolean).map(line => {
-      const vals = line.split(',').map(v => v.trim().replace(/"/g,''));
-      const row: any = {};
-      headers.forEach((h, i) => { row[h] = vals[i] ?? ''; });
-      return row;
-    });
-    setRows(parsed);
+    if (!file.name.endsWith('.csv')) {
+      setError('Please upload a .csv file');
+      return;
+    }
+
+    const text = await file.text();
+    const { headers, rows: parsed } = parseCSV(text);
+
+    const missing = REQUIRED_COLS.filter(c => !headers.includes(c));
+    if (missing.length) {
+      setError(`Missing required columns: ${missing.join(', ')} (headers are case-insensitive)`);
+      return;
+    }
+
+    if (parsed.length === 0) { setError('CSV file is empty'); return; }
+    if (parsed.length > 500) { setError('Maximum 500 boats per import'); return; }
+
+    setRows(parsed as CsvRow[]);
     setPreview(true);
   };
 
+  // Calls the real backend /boats/import-csv endpoint with server-side validation
   const importMutation = useMutation({
-    mutationFn: () => Promise.all(rows.map(row =>
-      api.post('/boats', {
-        name:        row.name,
-        type:        row.type,
-        capacity:    Number(row.capacity),
-        dailyRate:   Number(row.dailyRate),
-        hourlyRate:  row.hourlyRate ? Number(row.hourlyRate) : undefined,
-        description: row.description,
-        amenities:   row.amenities ? row.amenities.split(';').map(s => s.trim()).filter(Boolean) : [],
-        photoUrls:   [],
-      })
-    )),
-    onSuccess: () => {
+    mutationFn: () => api.post('/boats/import-csv', { rows }),
+    onSuccess: (response) => {
+      const { created, failed, results } = response.data;
       queryClient.invalidateQueries({ queryKey: ['boats'] });
-      setOpen(false); setRows([]); setPreview(false);
+      if (failed > 0) {
+        const failedNames = results
+          .filter((r: any) => !r.success)
+          .map((r: any) => `${r.name}: ${r.error}`)
+          .join('\n');
+        setError(`Imported ${created} boat(s). ${failed} failed:\n${failedNames}`);
+        setPreview(false);
+        setRows([]);
+      } else {
+        setOpen(false); setRows([]); setPreview(false); setError('');
+      }
     },
   });
 
@@ -82,13 +109,13 @@ export default function CsvImport() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-semibold mb-1">Import Boats from CSV</h2>
             <p className="text-sm text-gray-500 mb-4">
-              Upload a CSV with columns: <code className="bg-gray-100 px-1 rounded text-xs">name, type, capacity, dailyRate</code> (required) plus optional <code className="bg-gray-100 px-1 rounded text-xs">hourlyRate, description, amenities</code> (semicolon-separated).
+              Required columns: <code className="bg-gray-100 px-1 rounded text-xs">name, type, capacity, dailyRate</code>.
+              Optional: <code className="bg-gray-100 px-1 rounded text-xs">hourlyRate, description, amenities</code> (semicolon-separated). Max 500 rows.
             </p>
 
             {!preview ? (
               <div className="space-y-4">
-                <button onClick={downloadTemplate}
-                  className="text-sm text-brand-600 hover:underline">
+                <button onClick={downloadTemplate} className="text-sm text-brand-600 hover:underline">
                   ↓ Download template CSV
                 </button>
                 <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
@@ -96,11 +123,15 @@ export default function CsvImport() {
                   className="w-full border-2 border-dashed border-gray-200 rounded-xl p-8 text-gray-500 hover:border-brand-400 hover:text-brand-600 transition-colors text-sm">
                   Click to choose CSV file
                 </button>
-                {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg p-3">{error}</p>}
+                {error && (
+                  <pre className="text-sm text-red-600 bg-red-50 rounded-lg p-3 whitespace-pre-wrap">{error}</pre>
+                )}
               </div>
             ) : (
               <div>
-                <p className="text-sm text-gray-600 mb-3">Found <strong>{rows.length}</strong> boat{rows.length !== 1 ? 's' : ''}. Review before importing:</p>
+                <p className="text-sm text-gray-600 mb-3">
+                  Found <strong>{rows.length}</strong> boat{rows.length !== 1 ? 's' : ''}. Review before importing:
+                </p>
                 <div className="overflow-x-auto rounded-lg border border-gray-200 mb-4">
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50">
@@ -114,7 +145,7 @@ export default function CsvImport() {
                           <td className="px-3 py-2 font-medium text-gray-900">{row.name}</td>
                           <td className="px-3 py-2 text-gray-600">{row.type}</td>
                           <td className="px-3 py-2 text-gray-600">{row.capacity}</td>
-                          <td className="px-3 py-2 text-gray-600">${row.dailyRate}</td>
+                          <td className="px-3 py-2 text-gray-600">${row.dailyRate || row.dailyrate}</td>
                           <td className="px-3 py-2 text-gray-600">{row.hourlyRate ? `$${row.hourlyRate}` : '—'}</td>
                           <td className="px-3 py-2 text-gray-600">{row.amenities ?? '—'}</td>
                         </tr>
@@ -124,7 +155,7 @@ export default function CsvImport() {
                   {rows.length > 20 && <p className="text-xs text-gray-400 p-2 text-center">…and {rows.length - 20} more</p>}
                 </div>
                 {importMutation.isError && (
-                  <p className="text-sm text-red-600 bg-red-50 rounded-lg p-3 mb-3">Some boats failed to import. Please check the data.</p>
+                  <p className="text-sm text-red-600 bg-red-50 rounded-lg p-3 mb-3">Import failed. Please check your data and try again.</p>
                 )}
                 <div className="flex gap-3">
                   <button onClick={() => { setPreview(false); setRows([]); }}
