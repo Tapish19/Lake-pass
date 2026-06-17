@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 import { prisma } from '../lib/prisma';
 import { requireAuth, requireMarinaStaff, AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
@@ -123,7 +124,7 @@ router.post('/walk-in', requireAuth, requireMarinaStaff, async (req: AuthRequest
     if (!user) {
       user = await prisma.user.create({
         data: {
-          clerkId: `walkin_${Date.now()}`, // placeholder — no Clerk login
+          clerkId: `walkin_${randomUUID()}`, // UUID — safe under concurrent load
           name:    data.walkInName,
           email:   data.walkInEmail,
           phone:   data.walkInPhone,
@@ -135,9 +136,9 @@ router.post('/walk-in', requireAuth, requireMarinaStaff, async (req: AuthRequest
     // Create anonymous walk-in placeholder user
     const anon = await prisma.user.create({
       data: {
-        clerkId: `walkin_${Date.now()}`,
+        clerkId: `walkin_${randomUUID()}`,
         name:    data.walkInName,
-        email:   `walkin_${Date.now()}@lakepass.local`,
+        email:   `walkin_${randomUUID()}@lakepass.local`,
         phone:   data.walkInPhone,
       },
     });
@@ -267,7 +268,8 @@ router.patch('/:id/check-in', requireAuth, requireMarinaStaff, async (req: AuthR
 router.patch('/:id/check-out', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
   const r = await prisma.reservation.findUniqueOrThrow({ where: { id: req.params.id }, include: { boat: true } });
   if (r.boat.marinaId !== req.marinaId) throw new AppError(403, 'Forbidden');
-  if (r.status !== 'checked_in') throw new AppError(400, 'Must be checked-in before check-out');
+  if (r.status !== 'checked_in') throw new AppError(400, 'Reservation must be checked_in before check-out — cannot skip check-in');
+  if (!r.checkedInAt) throw new AppError(400, 'No check-in timestamp found — use the check-in endpoint first');
   const updated = await prisma.reservation.update({
     where: { id: req.params.id }, data: { status: 'checked_out', checkedOutAt: new Date() },
   });
