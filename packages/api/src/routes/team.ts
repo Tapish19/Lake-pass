@@ -1,10 +1,12 @@
 /**
- * Team management routes — owner-only.
+ * Team management routes — scoped to the authenticated owner/staff's own
+ * marina (req.marinaId, set by requireAuth) rather than a URL param, the
+ * same convention used by boats/reservations/payments routes.
  *
- * GET    /marinas/:id/team            → list all staff members
- * POST   /marinas/:id/team/invite     → invite by email (creates pending invite)
- * PATCH  /marinas/:id/team/:memberId  → change role
- * DELETE /marinas/:id/team/:memberId  → remove member
+ * GET    /team            → list all staff members + pending invites
+ * POST   /team/invite     → invite by email (creates or refreshes a pending invite)
+ * PATCH  /team/:memberId  → change a member's role
+ * DELETE /team/:memberId  → remove a member OR cancel a pending invite (same id space)
  *
  * We keep "invites" lightweight: instead of a full invite-token flow (which
  * would require an email-delivery service), we store a StaffInvite row with
@@ -21,29 +23,15 @@ import { prisma } from '../lib/prisma';
 import { requireAuth, requireMarinaOwner, requireMarinaStaff, AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
-const router = Router({ mergeParams: true }); // inherits :id from parent
+const router = Router();
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-function guardMarina(req: AuthRequest) {
-  if (req.params.id !== req.marinaId) {
-    throw new AppError(403, 'You do not manage this marina');
-  }
-}
-
-// ─── GET /marinas/:id/team ───────────────────────────────────────────────────
+// ─── GET /team ───────────────────────────────────────────────────────────────
 // Returns both confirmed staff members and pending invites so the UI can show
 // one unified list.
 router.get('/', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
-  guardMarina(req);
-
   const [members, invites] = await Promise.all([
     prisma.staffMember.findMany({
       where: { marinaId: req.marinaId! },
-      include: {
-        // Pull display info from the linked User row when it exists.
-        // StaffMember.clerkId → User.clerkId
-      },
     }),
     prisma.staffInvite.findMany({
       where: { marinaId: req.marinaId! },
@@ -78,32 +66,23 @@ router.get('/', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) =
     name:      null,
     email:     inv.email,
     status:    'invited' as const,
+    createdAt: inv.createdAt,
     expiresAt: inv.expiresAt,
   }));
 
   res.json({ members: enriched, invites: pendingInvites });
 });
 
-// ─── POST /marinas/:id/team/invite ──────────────────────────────────────────
+// ─── POST /team/invite ───────────────────────────────────────────────────────
 const InviteSchema = z.object({
   email: z.string().email(),
   role:  z.enum(['manager', 'staff']),
 });
 
 router.post('/invite', requireAuth, requireMarinaOwner, async (req: AuthRequest, res) => {
-  guardMarina(req);
-
   const { email, role } = InviteSchema.parse(req.body);
 
-  // Prevent duplicate active invites for the same email.
-  const existing = await prisma.staffInvite.findFirst({
-    where: { marinaId: req.marinaId!, email },
-  });
-  if (existing) {
-    throw new AppError(409, `An invite for ${email} is already pending`);
-  }
-
-  // Also prevent inviting someone who is already a staff member.
+  // Block inviting someone who is already an active staff member.
   const existingUser = await prisma.user.findUnique({ where: { email } });
   if (existingUser) {
     const alreadyStaff = await prisma.staffMember.findFirst({
@@ -116,6 +95,22 @@ router.post('/invite', requireAuth, requireMarinaOwner, async (req: AuthRequest,
 
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
+  // If this email already has a pending invite, treat this submission as a
+  // resend: update the role/expiry in place instead of erroring out. That
+  // lets an owner fix a mis-typed role or refresh a stale invite right from
+  // the same form, without first having to cancel it.
+  const existingInvite = await prisma.staffInvite.findFirst({
+    where: { marinaId: req.marinaId!, email },
+  });
+
+  if (existingInvite) {
+    const updated = await prisma.staffInvite.update({
+      where: { id: existingInvite.id },
+      data:  { role, expiresAt },
+    });
+    return res.status(200).json({ ...updated, resent: true });
+  }
+
   const invite = await prisma.staffInvite.create({
     data: {
       marinaId: req.marinaId!,
@@ -125,17 +120,15 @@ router.post('/invite', requireAuth, requireMarinaOwner, async (req: AuthRequest,
     },
   });
 
-  res.status(201).json(invite);
+  res.status(201).json({ ...invite, resent: false });
 });
 
-// ─── PATCH /marinas/:id/team/:memberId ──────────────────────────────────────
+// ─── PATCH /team/:memberId ───────────────────────────────────────────────────
 const UpdateRoleSchema = z.object({
   role: z.enum(['manager', 'staff']),
 });
 
 router.patch('/:memberId', requireAuth, requireMarinaOwner, async (req: AuthRequest, res) => {
-  guardMarina(req);
-
   const { role } = UpdateRoleSchema.parse(req.body);
   const member = await prisma.staffMember.findUniqueOrThrow({
     where: { id: req.params.memberId },
@@ -155,10 +148,8 @@ router.patch('/:memberId', requireAuth, requireMarinaOwner, async (req: AuthRequ
   res.json(updated);
 });
 
-// ─── DELETE /marinas/:id/team/:memberId ─────────────────────────────────────
+// ─── DELETE /team/:memberId ──────────────────────────────────────────────────
 router.delete('/:memberId', requireAuth, requireMarinaOwner, async (req: AuthRequest, res) => {
-  guardMarina(req);
-
   // Could be a confirmed member or a pending invite — check both.
   const member = await prisma.staffMember.findUnique({
     where: { id: req.params.memberId },
