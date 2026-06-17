@@ -148,3 +148,4 @@ router.get('/me/export', requireAuth, async (req: AuthRequest, res) => {
     favorites,
   });
 });
+export default router;
