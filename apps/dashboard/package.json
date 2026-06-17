@@ -10,6 +10,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.50.0",
     "@clerk/nextjs": "^5.0.0",
     "@lake-pass/shared": "workspace:*",
     "@stripe/stripe-js": "^3.0.0",
