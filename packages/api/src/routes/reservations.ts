@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { prisma } from '../lib/prisma';
-import { requireAuth, requireMarinaStaff, AuthRequest } from '../middleware/auth';
+import { requireAuth, requireMarinaStaff, requireMarinaManager, AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 import {
   sendConfirmation, sendReminder, sendNoShowNotice, sendCancellationNotice,
@@ -112,7 +112,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 });
 
 // ── POST /reservations/walk-in — staff manual booking ─────────────────────────
-router.post('/walk-in', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+router.post('/walk-in', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const data = WalkInSchema.parse(req.body);
   if (data.endDate <= data.startDate) throw new AppError(400, 'End date must be after start date');
 
@@ -236,8 +236,14 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
 
 router.patch('/:id/cancel', requireAuth, async (req: AuthRequest, res) => {
   const r = await prisma.reservation.findUniqueOrThrow({ where: { id: req.params.id }, include: { boat: true, user: true } });
-  const ok = r.userId === req.userId || (!!req.marinaId && r.boat.marinaId === req.marinaId);
-  if (!ok) throw new AppError(403, 'Forbidden');
+
+  const isConsumerOwner = r.userId === req.userId;
+  const isManagerOrAbove = !!req.marinaId && r.boat.marinaId === req.marinaId &&
+    (req.staffRole === 'owner' || req.staffRole === 'manager');
+
+  if (!isConsumerOwner && !isManagerOrAbove) {
+    throw new AppError(403, 'Forbidden — manager or owner required to cancel on behalf of marina');
+  }
   if (['cancelled','checked_out','no_show'].includes(r.status)) throw new AppError(400, 'Cannot cancel in current state');
   await prisma.reservation.update({ where: { id: req.params.id }, data: { status: 'cancelled' } });
   const full = await getReservationForNotif(req.params.id);
@@ -276,7 +282,7 @@ router.patch('/:id/check-out', requireAuth, requireMarinaStaff, async (req: Auth
   res.json(updated);
 });
 
-router.patch('/:id/no-show', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+router.patch('/:id/no-show', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const r = await prisma.reservation.findUniqueOrThrow({ where: { id: req.params.id }, include: { boat: true, user: true } });
   if (r.boat.marinaId !== req.marinaId) throw new AppError(403, 'Forbidden');
   if (!['pending','confirmed'].includes(r.status)) throw new AppError(400, 'Can only mark pending/confirmed as no-show');
