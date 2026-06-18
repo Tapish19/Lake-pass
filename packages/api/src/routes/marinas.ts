@@ -30,6 +30,7 @@ const UpdateMarinaSchema = z.object({
   website:     z.string().url().optional(),
   logoUrl: z.string().url().nullable().optional(),
   widgetColor: z.string().optional(),
+  widgetFont:  z.string().optional(),
 });
 
 // ── GET /marinas ─────────────────────────────────────────────────────────────
@@ -158,3 +159,4 @@ router.get('/:id/staff', requireAuth, requireMarinaManager, async (req: AuthRequ
 });
 
 export default router;
+
