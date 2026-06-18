@@ -202,6 +202,91 @@ router.post('/refund', requireAuth, requireMarinaManager, async (req: AuthReques
   res.json({ refundId: refund.id, amount: refund.amount, status: refund.status });
 });
 
+// ── POST /payments/security-deposit/hold (manager+) ─────────────────────────
+// Creates a manual-capture PaymentIntent as a security deposit hold.
+// The hold is NOT captured — it only reserves funds on the customer's card.
+router.post('/security-deposit/hold', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
+  const { reservationId, amountCents } = z.object({
+    reservationId: z.string(),
+    amountCents:   z.number().int().positive(),
+  }).parse(req.body);
+
+  const r = await prisma.reservation.findUniqueOrThrow({
+    where:   { id: reservationId },
+    include: { boat: { include: { marina: true } }, user: true },
+  });
+  if (r.boat.marinaId !== req.marinaId) throw new AppError(403, 'Forbidden');
+  if (!r.boat.marina.stripeAccountId)  throw new AppError(400, 'Marina Stripe not connected');
+  if (r.securityDepositHoldId)         throw new AppError(400, 'Security deposit hold already exists');
+
+  const intent = await stripe.paymentIntents.create({
+    amount:               amountCents,
+    currency:             'usd',
+    capture_method:       'manual',
+    customer_email:       r.user.email,
+    description:          `Security deposit – ${r.boat.name} reservation ${r.id}`,
+    transfer_data:        { destination: r.boat.marina.stripeAccountId },
+    application_fee_amount: 0,
+    metadata:             { reservationId: r.id, type: 'security_deposit' },
+  });
+
+  await prisma.reservation.update({
+    where: { id: reservationId },
+    data:  { securityDepositHoldId: intent.id },
+  });
+
+  res.json({
+    clientSecret: intent.client_secret,
+    intentId:     intent.id,
+    amountCents,
+    status:       intent.status,
+  });
+});
+
+// ── POST /payments/security-deposit/capture (manager+) ───────────────────────
+// Captures (charges) a previously-held security deposit (e.g. after damage).
+router.post('/security-deposit/capture', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
+  const { reservationId, amountCents } = z.object({
+    reservationId: z.string(),
+    amountCents:   z.number().int().positive().optional(),
+  }).parse(req.body);
+
+  const r = await prisma.reservation.findUniqueOrThrow({
+    where:   { id: reservationId },
+    include: { boat: true },
+  });
+  if (r.boat.marinaId !== req.marinaId) throw new AppError(403, 'Forbidden');
+  if (!r.securityDepositHoldId)         throw new AppError(400, 'No security deposit hold found');
+
+  const captured = await stripe.paymentIntents.capture(r.securityDepositHoldId, {
+    ...(amountCents ? { amount_to_capture: amountCents } : {}),
+  });
+
+  res.json({ status: captured.status, amountCaptured: captured.amount_received });
+});
+
+// ── POST /payments/security-deposit/release (manager+) ───────────────────────
+// Cancels (releases) the hold — no charge to the customer.
+router.post('/security-deposit/release', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
+  const { reservationId } = z.object({ reservationId: z.string() }).parse(req.body);
+
+  const r = await prisma.reservation.findUniqueOrThrow({
+    where:   { id: reservationId },
+    include: { boat: true },
+  });
+  if (r.boat.marinaId !== req.marinaId) throw new AppError(403, 'Forbidden');
+  if (!r.securityDepositHoldId)         throw new AppError(400, 'No security deposit hold found');
+
+  await stripe.paymentIntents.cancel(r.securityDepositHoldId);
+
+  await prisma.reservation.update({
+    where: { id: reservationId },
+    data:  { securityDepositHoldId: null },
+  });
+
+  res.json({ released: true });
+});
+
 // ── POST /payments/damage-fee (manager+) ──────────────────────────────────────
 router.post('/damage-fee', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const { reservationId, amountCents, description } = z.object({
@@ -243,3 +328,4 @@ router.post('/damage-fee', requireAuth, requireMarinaManager, async (req: AuthRe
 });
 
 export default router;
+
