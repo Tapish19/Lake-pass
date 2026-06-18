@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar, dateFnsLocalizer, View, SlotInfo } from 'react-big-calendar';
-import { withDragAndDrop } from 'react-big-calendar/lib/addons/dragAndDrop';
+import  withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale/en-US';
 import { useState, useMemo } from 'react';
