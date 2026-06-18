@@ -5,12 +5,13 @@ import { usePathname } from 'next/navigation';
 import { clsx } from 'clsx';
 
 const nav = [
-  { href: '/fleet', label: 'Fleet', icon: '⛵' },
-  { href: '/reservations', label: 'Reservations', icon: '📅' },
-  { href: '/payments', label: 'Payments', icon: '💳' },
-  { href: '/reports', label: 'Reports', icon: '📊' },
-  { href: '/team', label: 'Team', icon: '👥' },
-  { href: '/settings', label: 'Settings', icon: '⚙️' },
+  { href: '/fleet',       label: 'Fleet',        icon: '⛵' },
+  { href: '/reservations',label: 'Reservations', icon: '📅' },
+  { href: '/payments',    label: 'Payments',     icon: '💳' },
+  { href: '/maintenance', label: 'Maintenance',  icon: '🔧' },
+  { href: '/reports',     label: 'Reports',      icon: '📊' },
+  { href: '/team',        label: 'Team',         icon: '👥' },
+  { href: '/settings',    label: 'Settings',     icon: '⚙️' },
 ];
 
 export default function Sidebar() {
