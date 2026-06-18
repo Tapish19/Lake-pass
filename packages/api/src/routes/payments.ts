@@ -223,7 +223,7 @@ router.post('/security-deposit/hold', requireAuth, requireMarinaManager, async (
     amount:               amountCents,
     currency:             'usd',
     capture_method:       'manual',
-    customer_email:       r.user.email,
+    receipt_email:       r.user.email,
     description:          `Security deposit – ${r.boat.name} reservation ${r.id}`,
     transfer_data:        { destination: r.boat.marina.stripeAccountId },
     application_fee_amount: 0,
