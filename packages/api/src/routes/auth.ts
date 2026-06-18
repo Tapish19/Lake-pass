@@ -37,9 +37,17 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
       : null,
   ]);
 
+  // hasCompletedOnboarding: true once the marina has ≥1 boat
+  let hasCompletedOnboarding: boolean | undefined;
+  if (staffMember?.marina?.id) {
+    const boatCount = await prisma.boat.count({ where: { marinaId: staffMember.marina.id, isActive: true } });
+    hasCompletedOnboarding = boatCount > 0;
+  }
+
   res.json({
     user,
     staff: staffMember ? { role: staffMember.role, marina: staffMember.marina } : null,
+    hasCompletedOnboarding,
   });
 });
 
