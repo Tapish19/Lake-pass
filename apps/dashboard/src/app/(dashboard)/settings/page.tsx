@@ -110,6 +110,22 @@ export default function SettingsPage() {
                 <span className="text-xs text-gray-500">Used on the embeddable booking widget</span>
               </div>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Widget Font Family</label>
+              <select {...register('widgetFont' as any)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="system-ui, sans-serif">System Default</option>
+                <option value="Georgia, serif">Georgia (serif)</option>
+                <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                <option value="'Courier New', monospace">Courier New (mono)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Marina Logo URL</label>
+              <input {...register('logoUrl' as any)} type="url" placeholder="https://…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              <p className="text-xs text-gray-400 mt-1">Shown in the booking widget header</p>
+            </div>
             {saveMutation.isSuccess && <p className="text-sm text-green-600">Saved successfully.</p>}
             <button type="submit" disabled={!isDirty || saveMutation.isPending || !marina?.id}
               className="bg-brand-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-brand-700 disabled:opacity-50">
@@ -180,3 +196,4 @@ export default function SettingsPage() {
     </div>
   );
 }
+
