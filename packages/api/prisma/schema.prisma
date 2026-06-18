@@ -22,6 +22,7 @@ model Marina {
   isActive        Boolean       @default(true)
   stripeAccountId String?
   widgetColor     String?       @default("#1d6fdb")
+  widgetFont      String?       @default("system-ui")
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -49,10 +50,11 @@ model Boat {
   updatedAt    DateTime   @updatedAt
 
   marina       Marina       @relation(fields: [marinaId], references: [id])
-  reservations Reservation[]
-  reviews      Review[]
-  blockouts    Blockout[]
-  favorites    Favorite[]
+  reservations    Reservation[]
+  reviews         Review[]
+  blockouts       Blockout[]
+  favorites       Favorite[]
+  maintenanceLogs MaintenanceLog[]
 
   @@map("boats")
 }
@@ -267,3 +269,19 @@ model ComplianceRequest {
   @@index([userId])
   @@map("compliance_requests")
 }
+
+model MaintenanceLog {
+  id        String   @id @default(cuid())
+  boatId    String
+  type      String   // "maintenance" | "inspection" | "repair" | "fuel" | "cleaning"
+  notes     String?
+  cost      Float?
+  performedAt DateTime @default(now())
+  performedBy String?  // staff name or clerkId
+  createdAt DateTime @default(now())
+
+  boat Boat @relation(fields: [boatId], references: [id])
+
+  @@map("maintenance_logs")
+}
+
