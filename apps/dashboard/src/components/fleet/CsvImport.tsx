@@ -63,7 +63,17 @@ export default function CsvImport() {
     if (parsed.length === 0) { setError('CSV file is empty'); return; }
     if (parsed.length > 500) { setError('Maximum 500 boats per import'); return; }
 
-    setRows(parsed as unknown as CsvRow[]);
+    setRows(
+  parsed.map((row): CsvRow => ({
+    name: row.name ?? '',
+    type: row.type ?? '',
+    capacity: row.capacity ?? '',
+    dailyRate: row.dailyrate ?? row.dailyRate ?? '',
+    hourlyRate: row.hourlyrate ?? row.hourlyRate ?? '',
+    description: row.description ?? '',
+    amenities: row.amenities ?? '',
+  }))
+);
     setPreview(true);
   };
 
@@ -145,7 +155,9 @@ export default function CsvImport() {
                           <td className="px-3 py-2 font-medium text-gray-900">{row.name}</td>
                           <td className="px-3 py-2 text-gray-600">{row.type}</td>
                           <td className="px-3 py-2 text-gray-600">{row.capacity}</td>
-                          <td className="px-3 py-2 text-gray-600">${row.dailyRate || row.dailyrate}</td>
+                          <td className="px-3 py-2 text-gray-600">
+  ${row.dailyRate}
+</td>
                           <td className="px-3 py-2 text-gray-600">{row.hourlyRate ? `$${row.hourlyRate}` : '—'}</td>
                           <td className="px-3 py-2 text-gray-600">{row.amenities ?? '—'}</td>
                         </tr>
