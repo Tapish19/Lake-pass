@@ -43,7 +43,8 @@ export default clerkMiddleware(async (auth, req) => {
     const mfaVerified = fva ? fva[1] !== -1 : false;
 
     // Only enforce MFA if it's configured (REQUIRE_MFA env var or session has fva claim)
-    const mfaConfigured = process.env.NEXT_PUBLIC_REQUIRE_MFA === 'true' || fva !== undefined;
+    const mfaConfigured =
+  process.env.NEXT_PUBLIC_REQUIRE_MFA === 'true';
 
     if (mfaConfigured && !mfaVerified) {
       const mfaUrl = new URL('/mfa-required', req.url);
