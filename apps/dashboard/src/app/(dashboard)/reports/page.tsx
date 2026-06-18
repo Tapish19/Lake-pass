@@ -8,10 +8,10 @@ import {
 import { useApi } from '@/lib/useApi';
 
 interface Reports {
-  totalRevenue:   number;
-  totalBookings:  number;
-  activeBoats:    number;
-  utilization:    { boatId: string; boatName: string; bookedDays: number; bookingCount: number }[];
+  totalRevenue:       number;
+  totalBookings:      number;
+  activeBoats:        number;
+  utilization:        { boatId: string; boatName: string; bookedDays: number; bookingCount: number }[];
   recentReservations: any[];
 }
 
@@ -21,13 +21,14 @@ export default function ReportsPage() {
   const api = useApi();
   const { isLoaded } = useAuth();
 
-  const { data: me } = useQuery<{ staff?: { marina: { id: string } } }>({
+  const { data: me } = useQuery<{ staff?: { marina: { id: string; name: string } } }>({
     queryKey: ['me'],
     queryFn:  () => api.get('/auth/me').then(r => r.data),
     enabled:  isLoaded,
   });
 
-  const marinaId = me?.staff?.marina?.id;
+  const marinaId   = me?.staff?.marina?.id;
+  const marinaName = me?.staff?.marina?.name ?? 'Marina';
 
   const { data: reports, isLoading } = useQuery<Reports>({
     queryKey: ['reports', marinaId],
@@ -35,7 +36,8 @@ export default function ReportsPage() {
     enabled:  !!marinaId,
   });
 
-  const handleExport = () => {
+  // ── CSV export ───────────────────────────────────────────────────────────────
+  const handleExportCsv = () => {
     if (!reports) return;
     const rows = [
       ['Boat', 'Bookings', 'Booked Days'],
@@ -51,6 +53,54 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url);
   };
 
+  // ── PDF export (print-friendly HTML rendered in a new window) ────────────────
+  const handleExportPdf = () => {
+    if (!reports) return;
+    const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const rows = reports.utilization.map(u =>
+      `<tr><td>${u.boatName}</td><td>${u.bookingCount}</td><td>${u.bookedDays}</td></tr>`
+    ).join('');
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Lake Pass Report – ${marinaName}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 40px; color: #111; }
+    h1   { font-size: 22px; margin-bottom: 4px; }
+    p    { color: #666; font-size: 13px; margin-bottom: 32px; }
+    .stats { display: flex; gap: 24px; margin-bottom: 32px; }
+    .stat  { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px 24px; min-width: 130px; }
+    .stat-label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th    { text-align: left; padding: 8px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 11px; color: #6b7280; text-transform: uppercase; }
+    td    { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
+    @media print { body { margin: 20px; } }
+  </style>
+</head>
+<body>
+  <h1>Lake Pass – ${marinaName}</h1>
+  <p>Report generated ${date}</p>
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Total Revenue</div><div class="stat-value">$${reports.totalRevenue.toFixed(2)}</div></div>
+    <div class="stat"><div class="stat-label">Total Bookings</div><div class="stat-value">${reports.totalBookings}</div></div>
+    <div class="stat"><div class="stat-label">Active Boats</div><div class="stat-value">${reports.activeBoats}</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Boat</th><th>Bookings</th><th>Days Booked</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 400);
+  };
+
   const stats = [
     { label: 'Total Revenue',  value: `$${(reports?.totalRevenue  ?? 0).toFixed(2)}` },
     { label: 'Total Bookings', value: String(reports?.totalBookings ?? 0) },
@@ -59,15 +109,21 @@ export default function ReportsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
           <p className="text-gray-500">Analytics and performance insights</p>
         </div>
-        <button onClick={handleExport} disabled={!reports}
-          className="text-sm border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 disabled:opacity-50">
-          Export CSV
-        </button>
+        <div className="flex gap-2">
+          <button onClick={handleExportCsv} disabled={!reports}
+            className="text-sm border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 disabled:opacity-50">
+            Export CSV
+          </button>
+          <button onClick={handleExportPdf} disabled={!reports}
+            className="text-sm border border-gray-300 rounded-lg px-4 py-2 hover:bg-gray-50 disabled:opacity-50">
+            Export PDF
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -84,6 +140,25 @@ export default function ReportsPage() {
               </div>
             ))}
           </div>
+
+          {/* Customer feedback summary */}
+          {reports?.recentReservations && (() => {
+            const withReviews = reports.recentReservations.filter((r: any) => r.boat?.reviews?.length);
+            if (!withReviews.length) return null;
+            return (
+              <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+                <h2 className="text-base font-semibold text-gray-900 mb-3">Recent customer reviews</h2>
+                <div className="space-y-3">
+                  {withReviews.slice(0, 5).map((r: any) => r.boat.reviews.slice(0, 1).map((rv: any) => (
+                    <div key={rv.id} className="flex items-start gap-3">
+                      <span className="text-yellow-400 text-sm">{'★'.repeat(rv.rating)}{'☆'.repeat(5 - rv.rating)}</span>
+                      <p className="text-sm text-gray-700">{rv.comment ?? 'No comment.'}</p>
+                    </div>
+                  )))}
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4">Boat utilisation (days booked)</h2>
