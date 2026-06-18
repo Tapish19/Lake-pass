@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 
-interface Boat { id: string; name: string; type: string; capacity: number; dailyRate: number }
-interface Marina { id: string; name: string; widgetColor?: string; boats: Boat[] }
+interface Boat   { id: string; name: string; type: string; capacity: number; dailyRate: number }
+interface Marina { id: string; name: string; widgetColor?: string; widgetFont?: string; logoUrl?: string; boats: Boat[] }
 
 interface Props { params: { marinaId: string } }
 
@@ -17,8 +17,9 @@ export default function WidgetPage({ params }: Props) {
   const [selected, setSelected]         = useState<Boat | null>(null);
   const [done, setDone]                 = useState(false);
 
-  const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+  const API   = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
   const color = marina?.widgetColor ?? '#1d6fdb';
+  const font  = marina?.widgetFont  ?? 'system-ui, sans-serif';
 
   useEffect(() => {
     fetch(`${API}/marinas/${params.marinaId}`)
@@ -48,12 +49,18 @@ export default function WidgetPage({ params }: Props) {
   };
 
   return (
-    <div className="max-w-sm mx-auto p-3 font-sans">
+    <div className="max-w-sm mx-auto p-3 font-sans" style={{ fontFamily: font }}>
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
         {/* Header */}
-        <div className="p-4 text-white" style={{ backgroundColor: color }}>
-          <h2 className="text-base font-bold">{marina?.name ?? 'Book a Boat'}</h2>
-          <p className="text-xs opacity-80 mt-0.5">Real-time availability</p>
+        <div className="p-4 text-white flex items-center gap-3" style={{ backgroundColor: color }}>
+          {marina?.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={marina.logoUrl} alt={marina.name} className="w-8 h-8 rounded-full object-cover bg-white/20" />
+          )}
+          <div>
+            <h2 className="text-base font-bold">{marina?.name ?? 'Book a Boat'}</h2>
+            <p className="text-xs opacity-80 mt-0.5">Real-time availability</p>
+          </div>
         </div>
 
         {!selected ? (
@@ -140,3 +147,4 @@ export default function WidgetPage({ params }: Props) {
     </div>
   );
 }
+
