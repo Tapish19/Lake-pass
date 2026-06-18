@@ -63,7 +63,7 @@ export default function CsvImport() {
     if (parsed.length === 0) { setError('CSV file is empty'); return; }
     if (parsed.length > 500) { setError('Maximum 500 boats per import'); return; }
 
-    setRows(parsed as CsvRow[]);
+    setRows(parsed as unknown as CsvRow[]);
     setPreview(true);
   };
 
