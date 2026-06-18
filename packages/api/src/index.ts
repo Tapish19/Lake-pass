@@ -15,6 +15,7 @@ import uploadsRoutes      from './routes/uploads';
 import addonsRoutes       from './routes/addons';
 import favoritesRoutes    from './routes/favorites';
 import teamRoutes         from './routes/team';
+import maintenanceRoutes  from './routes/maintenance';
 import { errorHandler }   from './middleware/errorHandler';
 import { startReminderScheduler } from './lib/scheduler';
 
@@ -95,6 +96,7 @@ const registerRoutes = (prefix = '') => {
   app.use(`${prefix}/uploads`,                      uploadsRoutes);
   app.use(`${prefix}/addons`,                       addonsRoutes);
   app.use(`${prefix}/favorites`,                    favoritesRoutes);
+  app.use(`${prefix}/maintenance`,                  maintenanceRoutes);
 };
 
 registerRoutes('/api');
