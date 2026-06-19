@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import Stripe from 'stripe';
 import { prisma } from '../lib/prisma';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 // ─── POST /api/auth/sync ─────────────────────────────────────────────────────
 const SyncSchema = z.object({
@@ -37,7 +39,6 @@ router.get('/me', requireAuth, async (req: AuthRequest, res) => {
       : null,
   ]);
 
-  // hasCompletedOnboarding: true once the marina has ≥1 boat
   let hasCompletedOnboarding: boolean | undefined;
   if (staffMember?.marina?.id) {
     const boatCount = await prisma.boat.count({ where: { marinaId: staffMember.marina.id, isActive: true } });
@@ -64,6 +65,23 @@ router.patch('/me/documents', requireAuth, async (req: AuthRequest, res) => {
   res.json(user);
 });
 
+// ─── PATCH /api/auth/me/profile ───────────────────────────────────────────────
+// Update name, phone, and emergency contact fields.
+const ProfileSchema = z.object({
+  name:                    z.string().min(1).optional(),
+  phone:                   z.string().optional(),
+  emergencyContactName:    z.string().optional(),
+  emergencyContactPhone:   z.string().optional(),
+  emergencyContactRelation: z.string().optional(),
+});
+
+router.patch('/me/profile', requireAuth, async (req: AuthRequest, res) => {
+  if (!req.userId) return res.status(403).json({ error: 'Consumer account required' });
+  const data = ProfileSchema.parse(req.body);
+  const user = await prisma.user.update({ where: { id: req.userId }, data });
+  res.json(user);
+});
+
 // ─── PATCH /api/auth/me/push-token ───────────────────────────────────────────
 router.patch('/me/push-token', requireAuth, async (req: AuthRequest, res) => {
   if (!req.userId) return res.status(403).json({ error: 'Consumer account required' });
@@ -72,9 +90,72 @@ router.patch('/me/push-token', requireAuth, async (req: AuthRequest, res) => {
   res.json({ ok: true });
 });
 
-// ─── POST /api/auth/me/request-deletion (GDPR/CCPA Right to Erasure) ─────────
-// Soft-deletes the user account: anonymises PII on the User row,
-// cancels pending reservations, and logs the request for compliance audit.
+// ─── GET /api/auth/me/payment-methods ────────────────────────────────────────
+// Returns saved Stripe payment methods for the authenticated consumer.
+router.get('/me/payment-methods', requireAuth, async (req: AuthRequest, res) => {
+  if (!req.userId) return res.status(403).json({ error: 'Consumer account required' });
+
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.userId } });
+  if (!user.stripeCustomerId) return res.json({ paymentMethods: [] });
+
+  const methods = await stripe.paymentMethods.list({
+    customer: user.stripeCustomerId,
+    type: 'card',
+  });
+
+  res.json({
+    paymentMethods: methods.data.map(pm => ({
+      id:   pm.id,
+      brand: pm.card?.brand,
+      last4: pm.card?.last4,
+      expMonth: pm.card?.exp_month,
+      expYear:  pm.card?.exp_year,
+    })),
+  });
+});
+
+// ─── POST /api/auth/me/payment-methods/setup ─────────────────────────────────
+// Creates a Stripe SetupIntent so the client can save a card without charging.
+router.post('/me/payment-methods/setup', requireAuth, async (req: AuthRequest, res) => {
+  if (!req.userId) return res.status(403).json({ error: 'Consumer account required' });
+
+  let user = await prisma.user.findUniqueOrThrow({ where: { id: req.userId } });
+
+  // Lazily create a Stripe Customer record the first time
+  if (!user.stripeCustomerId) {
+    const customer = await stripe.customers.create({
+      email: user.email,
+      name:  user.name,
+      metadata: { lakePassUserId: user.id },
+    });
+    user = await prisma.user.update({
+      where: { id: req.userId },
+      data:  { stripeCustomerId: customer.id },
+    });
+  }
+
+  const setupIntent = await stripe.setupIntents.create({
+    customer: user.stripeCustomerId!,
+    payment_method_types: ['card'],
+  });
+
+  res.json({ clientSecret: setupIntent.client_secret });
+});
+
+// ─── DELETE /api/auth/me/payment-methods/:pmId ───────────────────────────────
+router.delete('/me/payment-methods/:pmId', requireAuth, async (req: AuthRequest, res) => {
+  if (!req.userId) return res.status(403).json({ error: 'Consumer account required' });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.userId } });
+
+  // Verify this PM belongs to our customer before detaching
+  const pm = await stripe.paymentMethods.retrieve(req.params.pmId);
+  if (pm.customer !== user.stripeCustomerId) throw new AppError(403, 'Payment method not owned by this account');
+
+  await stripe.paymentMethods.detach(req.params.pmId);
+  res.json({ detached: true });
+});
+
+// ─── POST /api/auth/me/request-deletion (GDPR/CCPA) ─────────────────────────
 router.post('/me/request-deletion', requireAuth, async (req: AuthRequest, res) => {
   if (!req.userId) return res.status(403).json({ error: 'Consumer account required' });
 
@@ -82,7 +163,6 @@ router.post('/me/request-deletion', requireAuth, async (req: AuthRequest, res) =
   if (user.deletedAt) return res.json({ message: 'Deletion already requested', deletedAt: user.deletedAt });
 
   await prisma.$transaction(async (tx) => {
-    // Cancel any pending/confirmed reservations that haven't started yet
     await tx.reservation.updateMany({
       where: {
         userId: req.userId!,
@@ -92,7 +172,6 @@ router.post('/me/request-deletion', requireAuth, async (req: AuthRequest, res) =
       data: { status: 'cancelled' },
     });
 
-    // Anonymise the user row — keep the row for FK integrity but wipe PII
     await tx.user.update({
       where: { id: req.userId! },
       data: {
@@ -102,11 +181,13 @@ router.post('/me/request-deletion', requireAuth, async (req: AuthRequest, res) =
         licenseUrl:  null,
         insuranceUrl: null,
         pushToken:   null,
+        emergencyContactName:     null,
+        emergencyContactPhone:    null,
+        emergencyContactRelation: null,
         deletedAt:   new Date(),
       },
     });
 
-    // Create compliance audit record
     await tx.complianceRequest.create({
       data: {
         userId:      req.userId!,
@@ -121,8 +202,7 @@ router.post('/me/request-deletion', requireAuth, async (req: AuthRequest, res) =
   res.json({ message: 'Account deletion completed. Your PII has been removed.' });
 });
 
-// ─── GET /api/auth/me/export (GDPR/CCPA Right to Data Portability) ────────────
-// Returns all data held for this user as JSON.
+// ─── GET /api/auth/me/export (GDPR/CCPA) ─────────────────────────────────────
 router.get('/me/export', requireAuth, async (req: AuthRequest, res) => {
   if (!req.userId) return res.status(403).json({ error: 'Consumer account required' });
 
@@ -148,12 +228,7 @@ router.get('/me/export', requireAuth, async (req: AuthRequest, res) => {
     data: { userId: req.userId, type: 'export', status: 'completed', completedAt: new Date() },
   });
 
-  res.json({
-    exportedAt: new Date().toISOString(),
-    profile: user,
-    reservations,
-    reviews,
-    favorites,
-  });
+  res.json({ exportedAt: new Date().toISOString(), profile: user, reservations, reviews, favorites });
 });
+
 export default router;
