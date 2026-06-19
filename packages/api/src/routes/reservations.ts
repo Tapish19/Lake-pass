@@ -6,6 +6,7 @@ import { AppError } from '../middleware/errorHandler';
 import {
   sendConfirmation, sendReminder, sendNoShowNotice, sendCancellationNotice,
 } from '../lib/notifications';
+import { notifyStaffNewBooking, notifyStaffWalkIn } from '../lib/push';
 
 const router = Router();
 
@@ -57,6 +58,11 @@ const WaiverSchema = z.object({
   reservationId: z.string(),
   signerName:    z.string().min(1),
   agreed:        z.literal(true, { errorMap: () => ({ message: 'You must agree to the waiver' }) }),
+});
+
+const RescheduleSchema = z.object({
+  startDate: z.coerce.date(),
+  endDate:   z.coerce.date(),
 });
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -156,7 +162,31 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
     include: { boat: { include: { marina: true } }, user: true, addons: true },
   });
 
+  await notifyStaffNewBooking(reservation.boat.marinaId, reservation.boat.name, reservation.user.name, reservation.startDate).catch(() => {});
+
   res.status(201).json(reservation);
+});
+
+// ── PATCH /reservations/:id/reschedule — drag-and-drop on the staff calendar ─
+router.patch('/:id/reschedule', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+  const data = RescheduleSchema.parse(req.body);
+  if (data.endDate <= data.startDate) throw new AppError(400, 'End date must be after start date');
+
+  const r = await prisma.reservation.findUniqueOrThrow({ where: { id: req.params.id }, include: { boat: true } });
+  if (r.boat.marinaId !== req.marinaId) throw new AppError(403, 'Forbidden');
+  if (['cancelled', 'checked_out', 'no_show'].includes(r.status)) {
+    throw new AppError(400, 'Cannot reschedule a reservation in this state');
+  }
+
+  await assertNoConflict(r.boatId, data.startDate, data.endDate, r.id);
+
+  const updated = await prisma.reservation.update({
+    where: { id: req.params.id },
+    data:  { startDate: data.startDate, endDate: data.endDate },
+    include: { boat: { include: { marina: true } }, user: true, addons: true },
+  });
+
+  res.json(updated);
 });
 
 // ── POST /reservations/walk-in ────────────────────────────────────────────────
@@ -188,6 +218,8 @@ router.post('/walk-in', requireAuth, requireMarinaManager, async (req: AuthReque
     },
     include: { boat: { include: { marina: true } }, user: true, addons: true },
   });
+
+  await notifyStaffWalkIn(reservation.boat.marinaId, reservation.boat.name, data.walkInName).catch(() => {});
 
   res.status(201).json(reservation);
 });
@@ -227,6 +259,16 @@ router.post('/sign-waiver', requireAuth, async (req: AuthRequest, res) => {
     },
   });
 
+  // Save (or refresh) a reusable copy on the consumer's profile so future
+  // bookings can skip re-signing as long as the waiver version is unchanged.
+  if (r.userId) {
+    await prisma.signedWaiver.upsert({
+      where:  { userId_version: { userId: r.userId, version: WAIVER_VERSION } },
+      create: { userId: r.userId, version: WAIVER_VERSION, signerName, ipAddress: ip, textSnapshot: WAIVER_TEXT, signedAt },
+      update: { signerName, ipAddress: ip, textSnapshot: WAIVER_TEXT, signedAt },
+    });
+  }
+
   res.json({
     message:       'Waiver signed',
     signedAt:      updated.waiverSignedAt,
@@ -235,6 +277,42 @@ router.post('/sign-waiver', requireAuth, async (req: AuthRequest, res) => {
     waiverVersion: WAIVER_VERSION,
     agreed,
   });
+});
+
+// ── GET /reservations/my-waiver — the consumer's saved waiver, if any ───────
+// Lets the booking flow skip the "read & agree" step when a current-version
+// waiver is already on file.
+router.get('/my-waiver', requireAuth, async (req: AuthRequest, res) => {
+  if (!req.userId) throw new AppError(403, 'Consumer account required');
+  const saved = await prisma.signedWaiver.findUnique({
+    where: { userId_version: { userId: req.userId, version: WAIVER_VERSION } },
+  });
+  res.json({ hasSavedWaiver: !!saved, signedAt: saved?.signedAt ?? null, signerName: saved?.signerName ?? null, version: WAIVER_VERSION });
+});
+
+// ── POST /reservations/:id/reuse-waiver — apply the saved waiver to a new booking ─
+router.post('/:id/reuse-waiver', requireAuth, async (req: AuthRequest, res) => {
+  if (!req.userId) throw new AppError(403, 'Consumer account required');
+  const r = await prisma.reservation.findUniqueOrThrow({ where: { id: req.params.id } });
+  if (r.userId !== req.userId) throw new AppError(403, 'Forbidden');
+  if (r.waiverSignedAt) return res.json({ message: 'Waiver already signed on this reservation', signedAt: r.waiverSignedAt });
+
+  const saved = await prisma.signedWaiver.findUnique({
+    where: { userId_version: { userId: req.userId, version: WAIVER_VERSION } },
+  });
+  if (!saved) throw new AppError(404, 'No saved waiver on file for the current version — please sign one first');
+
+  const updated = await prisma.reservation.update({
+    where: { id: req.params.id },
+    data:  {
+      waiverSignedAt:     saved.signedAt,
+      waiverIpAddress:    saved.ipAddress,
+      waiverSignerName:   saved.signerName,
+      waiverVersion:      saved.version,
+      waiverTextSnapshot: saved.textSnapshot,
+    },
+  });
+  res.json({ message: 'Reused saved waiver', signedAt: updated.waiverSignedAt, waiverVersion: updated.waiverVersion });
 });
 
 // ── GET /reservations ─────────────────────────────────────────────────────────
