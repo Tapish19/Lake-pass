@@ -34,27 +34,29 @@ model Marina {
 }
 
 model Boat {
-  id           String     @id @default(cuid())
-  marinaId     String
-  name         String
-  type         String
-  capacity     Int
-  dailyRate    Float
-  hourlyRate   Float?
-  description  String?
-  amenities    String[]
-  photoUrls    String[]
-  isActive     Boolean    @default(true)
-  status       BoatStatus @default(available)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id               String     @id @default(cuid())
+  marinaId         String
+  name             String
+  type             String
+  capacity         Int
+  dailyRate        Float
+  hourlyRate       Float?
+  description      String?
+  amenities        String[]
+  photoUrls        String[]
+  isActive         Boolean    @default(true)
+  status           BoatStatus @default(available)
+  // Minutes of buffer required between reservations (e.g. 60 = 1h turnaround)
+  turnaroundBuffer Int        @default(0)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
-  marina       Marina       @relation(fields: [marinaId], references: [id])
-  reservations    Reservation[]
-  reviews         Review[]
-  blockouts       Blockout[]
-  favorites       Favorite[]
-  maintenanceLogs MaintenanceLog[]
+  marina           Marina         @relation(fields: [marinaId], references: [id])
+  reservations     Reservation[]
+  reviews          Review[]
+  blockouts        Blockout[]
+  favorites        Favorite[]
+  maintenanceLogs  MaintenanceLog[]
 
   @@map("boats")
 }
@@ -74,9 +76,15 @@ model User {
   licenseUrl   String?
   insuranceUrl String?
   pushToken    String?
+  // Emergency contact
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+  // Stripe customer ID for saved payment methods
+  stripeCustomerId         String?
   // GDPR/CCPA compliance
-  deletedAt    DateTime?   // soft-delete: set on erasure request
-  dataExportRequestedAt DateTime? // last data export request
+  deletedAt             DateTime?
+  dataExportRequestedAt DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -149,15 +157,15 @@ model Reservation {
   walkInName      String?
   walkInPhone     String?
   walkInEmail     String?
-  // Waiver — legally defensible: store exactly what was agreed to
+  // Waiver
   waiverSignedAt      DateTime?
   waiverIpAddress     String?
   waiverSignerName    String?
-  waiverVersion       String?   // e.g. "2024-v1"
-  waiverTextSnapshot  String?   // full text of waiver at time of signing
+  waiverVersion       String?
+  waiverTextSnapshot  String?
   // Stripe
   stripeSessionId         String?
-  securityDepositHoldId   String?  // PaymentIntent ID for manual-capture hold
+  securityDepositHoldId   String?
   checkedInAt     DateTime?
   checkedOutAt    DateTime?
   createdAt       DateTime          @default(now())
@@ -256,32 +264,30 @@ model NotificationLog {
   @@map("notification_logs")
 }
 
-// Audit log for GDPR/CCPA requests
 model ComplianceRequest {
-  id        String   @id @default(cuid())
-  userId    String
-  type      String   // "deletion" | "export"
-  status    String   @default("pending") // "pending" | "completed" | "failed"
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  userId      String
+  type        String
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
   completedAt DateTime?
-  notes     String?
+  notes       String?
 
   @@index([userId])
   @@map("compliance_requests")
 }
 
 model MaintenanceLog {
-  id        String   @id @default(cuid())
-  boatId    String
-  type      String   // "maintenance" | "inspection" | "repair" | "fuel" | "cleaning"
-  notes     String?
-  cost      Float?
+  id          String   @id @default(cuid())
+  boatId      String
+  type        String
+  notes       String?
+  cost        Float?
   performedAt DateTime @default(now())
-  performedBy String?  // staff name or clerkId
-  createdAt DateTime @default(now())
+  performedBy String?
+  createdAt   DateTime @default(now())
 
   boat Boat @relation(fields: [boatId], references: [id])
 
   @@map("maintenance_logs")
 }
-
