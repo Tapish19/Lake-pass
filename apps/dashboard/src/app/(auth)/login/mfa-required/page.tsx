@@ -15,13 +15,15 @@ import { useAuth, UserProfile } from '@clerk/nextjs';
 export default function MfaRequiredPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { sessionClaims, isLoaded } = useAuth();
+  const auth = useAuth();
+  const { isLoaded } = auth;
   const [checking, setChecking] = useState(false);
 
   const redirectUrl = searchParams.get('redirect_url') || '/fleet';
 
   const mfaVerified = (() => {
-    const fva = (sessionClaims as any)?.fva as [number, number] | undefined;
+    if (!auth.isLoaded || !auth.isSignedIn) return false;
+    const fva = auth.sessionClaims?.fva as [number, number] | undefined;
     return fva ? fva[1] !== -1 : false;
   })();
 
