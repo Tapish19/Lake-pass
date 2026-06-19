@@ -9,7 +9,6 @@ import {
 
 const router = Router();
 
-// ── Waiver text version — bump this string whenever legal text changes ─────────
 const WAIVER_VERSION = '2024-v1';
 const WAIVER_TEXT = `
 LAKE PASS RENTAL WAIVER AND RELEASE OF LIABILITY
@@ -35,8 +34,6 @@ This waiver is legally binding. By agreeing, the Renter confirms they have read,
 Waiver Version: ${WAIVER_VERSION}
 `.trim();
 
-// ── schemas ───────────────────────────────────────────────────────────────────
-
 const CreateReservationSchema = z.object({
   boatId:    z.string(),
   startDate: z.coerce.date(),
@@ -45,11 +42,6 @@ const CreateReservationSchema = z.object({
   notes:     z.string().optional(),
 });
 
-// Staff-only: walk-in / phone booking
-// Walk-ins do NOT create phantom User rows. All walk-in data stays on the
-// reservation itself via walkInName / walkInPhone / walkInEmail columns.
-// The reservation still needs a User FK, so we use a single stable
-// "walk-in placeholder" user per marina rather than creating one per booking.
 const WalkInSchema = z.object({
   boatId:      z.string(),
   startDate:   z.coerce.date(),
@@ -69,20 +61,34 @@ const WaiverSchema = z.object({
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * assertNoConflict checks reservations AND blockouts, and also respects each
+ * boat's turnaroundBuffer (minutes). The buffer is applied symmetrically:
+ * a new reservation must not start within `buffer` minutes of an existing
+ * reservation's end, and must not end within `buffer` minutes of an existing
+ * reservation's start.
+ */
 async function assertNoConflict(boatId: string, startDate: Date, endDate: Date, excludeId?: string) {
+  const boat = await prisma.boat.findUniqueOrThrow({ where: { id: boatId }, select: { turnaroundBuffer: true } });
+  const bufferMs = (boat.turnaroundBuffer ?? 0) * 60 * 1000;
+
+  // Expand the window we're checking by the buffer on each side
+  const windowStart = new Date(startDate.getTime() - bufferMs);
+  const windowEnd   = new Date(endDate.getTime()   + bufferMs);
+
   const [res, blk] = await Promise.all([
     prisma.reservation.findFirst({
       where: {
         boatId, id: excludeId ? { not: excludeId } : undefined,
         status: { in: ['pending', 'confirmed', 'checked_in'] },
-        AND: [{ startDate: { lt: endDate } }, { endDate: { gt: startDate } }],
+        AND: [{ startDate: { lt: windowEnd } }, { endDate: { gt: windowStart } }],
       },
     }),
     prisma.blockout.findFirst({
       where: { boatId, AND: [{ startDate: { lt: endDate } }, { endDate: { gt: startDate } }] },
     }),
   ]);
-  if (res) throw new AppError(409, 'Boat is not available for the selected dates');
+  if (res) throw new AppError(409, 'Boat is not available for the selected dates (including turnaround buffer)');
   if (blk) throw new AppError(409, 'Boat is blocked for maintenance during those dates');
 }
 
@@ -111,10 +117,6 @@ async function getReservationForNotif(id: string) {
   });
 }
 
-/**
- * Returns (or creates) the single stable walk-in placeholder user for a marina.
- * This avoids polluting the users table with one fake user per walk-in booking.
- */
 async function getOrCreateWalkInPlaceholder(marinaId: string): Promise<string> {
   const placeholderClerkId = `walkin_placeholder_${marinaId}`;
   const existing = await prisma.user.findUnique({ where: { clerkId: placeholderClerkId } });
@@ -130,7 +132,7 @@ async function getOrCreateWalkInPlaceholder(marinaId: string): Promise<string> {
   return placeholder.id;
 }
 
-// ── POST /reservations — consumer booking ─────────────────────────────────────
+// ── POST /reservations ────────────────────────────────────────────────────────
 router.post('/', requireAuth, async (req: AuthRequest, res) => {
   if (!req.userId) throw new AppError(403, 'Only consumer accounts can create reservations');
   const data = CreateReservationSchema.parse(req.body);
@@ -157,16 +159,11 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
   res.status(201).json(reservation);
 });
 
-// ── POST /reservations/walk-in — staff manual booking ─────────────────────────
-// Walk-ins use a single stable placeholder user per marina. Customer details
-// are stored in walkInName / walkInPhone / walkInEmail on the reservation row.
-// No fake email users are created.
+// ── POST /reservations/walk-in ────────────────────────────────────────────────
 router.post('/walk-in', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   const data = WalkInSchema.parse(req.body);
   if (data.endDate <= data.startDate) throw new AppError(400, 'End date must be after start date');
 
-  // If the walk-in provided a real email that matches an existing account, link it.
-  // Otherwise use the stable marina placeholder — never create a new fake-email user.
   let userId: string;
   if (data.walkInEmail) {
     const existing = await prisma.user.findUnique({ where: { email: data.walkInEmail } });
@@ -196,15 +193,11 @@ router.post('/walk-in', requireAuth, requireMarinaManager, async (req: AuthReque
 });
 
 // ── GET /reservations/waiver-text ─────────────────────────────────────────────
-// Returns the current waiver text so the front-end can display it before signing.
 router.get('/waiver-text', (_req, res) => {
   res.json({ version: WAIVER_VERSION, text: WAIVER_TEXT });
 });
 
 // ── POST /reservations/sign-waiver ────────────────────────────────────────────
-// Records the full waiver text that was agreed to alongside the signature metadata.
-// This creates a legally defensible audit trail: we store what text was agreed to,
-// who signed it, when, and from which IP.
 router.post('/sign-waiver', requireAuth, async (req: AuthRequest, res) => {
   const { reservationId, signerName, agreed } = WaiverSchema.parse(req.body);
 
@@ -221,36 +214,23 @@ router.post('/sign-waiver', requireAuth, async (req: AuthRequest, res) => {
     ?? req.socket.remoteAddress
     ?? 'unknown';
 
-  const userAgent = req.headers['user-agent'] ?? 'unknown';
   const signedAt = new Date();
-
-  // Store the full waiver text snapshot so we always know exactly what was agreed to,
-  // even if the waiver text changes in future versions.
-  const waiverRecord = {
-    signerName,
-    signedAt: signedAt.toISOString(),
-    ipAddress: ip,
-    userAgent,
-    waiverVersion: WAIVER_VERSION,
-    waiverText: WAIVER_TEXT,
-    reservationId,
-  };
 
   const updated = await prisma.reservation.update({
     where: { id: reservationId },
     data:  {
-      waiverSignedAt: signedAt,
-      waiverIpAddress: ip,
-      waiverSignerName: signerName,
-      waiverVersion: WAIVER_VERSION,
+      waiverSignedAt:     signedAt,
+      waiverIpAddress:    ip,
+      waiverSignerName:   signerName,
+      waiverVersion:      WAIVER_VERSION,
       waiverTextSnapshot: WAIVER_TEXT,
     },
   });
 
   res.json({
-    message: 'Waiver signed',
-    signedAt: updated.waiverSignedAt,
-    ipAddress: ip,
+    message:       'Waiver signed',
+    signedAt:      updated.waiverSignedAt,
+    ipAddress:     ip,
     signerName,
     waiverVersion: WAIVER_VERSION,
     agreed,
@@ -302,8 +282,8 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res) => {
 
 router.patch('/:id/cancel', requireAuth, async (req: AuthRequest, res) => {
   const r = await prisma.reservation.findUniqueOrThrow({ where: { id: req.params.id }, include: { boat: true, user: true } });
-  const isConsumerOwner = r.userId === req.userId;
-  const isManagerOrAbove = !!req.marinaId && r.boat.marinaId === req.marinaId &&
+  const isConsumerOwner   = r.userId === req.userId;
+  const isManagerOrAbove  = !!req.marinaId && r.boat.marinaId === req.marinaId &&
     (req.staffRole === 'owner' || req.staffRole === 'manager');
   if (!isConsumerOwner && !isManagerOrAbove) throw new AppError(403, 'Forbidden');
   if (['cancelled','checked_out','no_show'].includes(r.status)) throw new AppError(400, 'Cannot cancel in current state');
