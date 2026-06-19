@@ -8,15 +8,17 @@ import { useApi } from '@/lib/useApi';
 interface BoatForm {
   name: string; type: string; capacity: number; dailyRate: number;
   hourlyRate?: number; description?: string; amenities: string;
+  turnaroundBuffer: number;
 }
 
 const FIELD_CONFIG = [
-  { name: 'name'        as const, label: 'Boat Name',       type: 'text',   ph: 'e.g. Sunset Cruiser',     req: true  },
-  { name: 'type'        as const, label: 'Boat Type',       type: 'text',   ph: 'Pontoon / Ski / Fishing', req: true  },
-  { name: 'capacity'    as const, label: 'Guest Capacity',  type: 'number', ph: '8',                       req: true  },
-  { name: 'dailyRate'   as const, label: 'Daily Rate ($)',  type: 'number', ph: '350',                     req: true  },
-  { name: 'hourlyRate'  as const, label: 'Hourly Rate ($)', type: 'number', ph: '75 (optional)',           req: false },
-  { name: 'amenities'   as const, label: 'Amenities (comma-separated)', type: 'text', ph: 'Tubes, Cooler, Life Jackets', req: false },
+  { name: 'name'             as const, label: 'Boat Name',                 type: 'text',   ph: 'e.g. Sunset Cruiser',        req: true  },
+  { name: 'type'             as const, label: 'Boat Type',                 type: 'text',   ph: 'Pontoon / Ski / Fishing',    req: true  },
+  { name: 'capacity'         as const, label: 'Guest Capacity',            type: 'number', ph: '8',                          req: true  },
+  { name: 'dailyRate'        as const, label: 'Daily Rate ($)',             type: 'number', ph: '350',                        req: true  },
+  { name: 'hourlyRate'       as const, label: 'Hourly Rate ($)',            type: 'number', ph: '75 (optional)',              req: false },
+  { name: 'turnaroundBuffer' as const, label: 'Turnaround Buffer (minutes)', type: 'number', ph: '60',                      req: false },
+  { name: 'amenities'        as const, label: 'Amenities (comma-separated)', type: 'text', ph: 'Tubes, Cooler, Life Jackets', req: false },
 ];
 
 export default function AddBoatButton() {
@@ -27,9 +29,10 @@ export default function AddBoatButton() {
 
   const api         = useApi();
   const queryClient = useQueryClient();
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<BoatForm>();
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<BoatForm>({
+    defaultValues: { turnaroundBuffer: 0 },
+  });
 
-  // ── photo upload via S3 pre-signed URL ────────────────────────────────────
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (!files.length) return;
@@ -52,13 +55,14 @@ export default function AddBoatButton() {
   const createBoat = useMutation({
     mutationFn: (data: BoatForm) =>
       api.post('/boats', {
-        name:        data.name,
-        type:        data.type,
-        capacity:    Number(data.capacity),
-        dailyRate:   Number(data.dailyRate),
-        hourlyRate:  data.hourlyRate ? Number(data.hourlyRate) : undefined,
-        description: data.description,
-        amenities:   data.amenities ? data.amenities.split(',').map(s => s.trim()).filter(Boolean) : [],
+        name:             data.name,
+        type:             data.type,
+        capacity:         Number(data.capacity),
+        dailyRate:        Number(data.dailyRate),
+        hourlyRate:       data.hourlyRate ? Number(data.hourlyRate) : undefined,
+        description:      data.description,
+        turnaroundBuffer: Number(data.turnaroundBuffer ?? 0),
+        amenities:        data.amenities ? data.amenities.split(',').map(s => s.trim()).filter(Boolean) : [],
         photoUrls,
       }),
     onSuccess: () => {
@@ -84,7 +88,12 @@ export default function AddBoatButton() {
             <form className="space-y-4" onSubmit={handleSubmit(d => createBoat.mutate(d))}>
               {FIELD_CONFIG.map(f => (
                 <div key={f.name}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{f.label}</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {f.label}
+                    {f.name === 'turnaroundBuffer' && (
+                      <span className="ml-1 text-xs text-gray-400">(buffer time between reservations)</span>
+                    )}
+                  </label>
                   <input type={f.type} placeholder={f.ph} step={f.type === 'number' ? 'any' : undefined}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                     {...register(f.name, { required: f.req ? `${f.label} is required` : false,
@@ -100,7 +109,6 @@ export default function AddBoatButton() {
                   {...register('description')} />
               </div>
 
-              {/* Photo upload */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Photos</label>
                 <input ref={fileRef} type="file" accept="image/*" multiple className="hidden"
