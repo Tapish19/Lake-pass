@@ -21,11 +21,7 @@ export default function MfaRequiredPage() {
 
   const redirectUrl = searchParams.get('redirect_url') || '/fleet';
 
-  const mfaVerified = (() => {
-    if (!auth.isLoaded || !auth.isSignedIn) return false;
-    const fva = auth.sessionClaims?.fva as [number, number] | undefined;
-    return fva ? fva[1] !== -1 : false;
-  })();
+  const mfaVerified = false;
 
   // Once MFA is verified, bounce back to the page the user originally wanted.
   useEffect(() => {
