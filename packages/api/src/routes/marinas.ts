@@ -12,7 +12,7 @@ const CreateMarinaSchema = z.object({
   address:   z.string(),
   city:      z.string(),
   state:     z.string(),
-  latitude: z.number().nullable().optional(),
+  latitude:  z.number().nullable().optional(),
   longitude: z.number().nullable().optional(),
   phone:     z.string().optional(),
   website:   z.string().url().optional(),
@@ -24,11 +24,11 @@ const UpdateMarinaSchema = z.object({
   address:     z.string().optional(),
   city:        z.string().optional(),
   state:       z.string().optional(),
-  latitude: z.number().nullable().optional(),
-  longitude: z.number().nullable().optional(),
+  latitude:    z.number().nullable().optional(),
+  longitude:   z.number().nullable().optional(),
   phone:       z.string().optional(),
   website:     z.string().url().optional(),
-  logoUrl: z.string().url().nullable().optional(),
+  logoUrl:     z.string().url().nullable().optional(),
   widgetColor: z.string().optional(),
   widgetFont:  z.string().optional(),
 });
@@ -52,7 +52,6 @@ router.get('/:id', async (req, res) => {
 });
 
 // ── GET /marinas/:id/reports (manager+) ──────────────────────────────────────
-// Revenue and utilisation data consumed by the Reports dashboard page.
 router.get('/:id/reports', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   if (req.params.id !== req.marinaId) throw new AppError(403, 'You do not manage this marina');
 
@@ -60,27 +59,56 @@ router.get('/:id/reports', requireAuth, requireMarinaManager, async (req: AuthRe
     prisma.boat.findMany({ where: { marinaId: req.marinaId!, isActive: true } }),
     prisma.reservation.findMany({
       where:   { boat: { marinaId: req.marinaId! } },
-      include: { boat: true, user: { select: { id: true, name: true, email: true } } },
+      include: {
+        boat: true,
+        user: { select: { id: true, name: true, email: true } },
+      },
       orderBy: { startDate: 'desc' },
     }),
   ]);
 
-  const paid        = reservations.filter(r => r.paymentStatus === 'paid');
+  const paid         = reservations.filter(r => r.paymentStatus === 'paid');
   const totalRevenue = paid.reduce((s, r) => s + (r.totalAmount ?? 0), 0);
 
   const utilization = boats.map(boat => {
-    const bookings = reservations.filter(r => r.boatId === boat.id && r.status !== 'cancelled');
+    const bookings  = reservations.filter(r => r.boatId === boat.id && r.status !== 'cancelled');
     const bookedDays = bookings.reduce((s, r) => {
       return s + Math.max(1, Math.round((new Date(r.endDate).getTime() - new Date(r.startDate).getTime()) / 86_400_000));
     }, 0);
     return { boatId: boat.id, boatName: boat.name, bookedDays, bookingCount: bookings.length };
   });
 
+  // ── Peak-time analysis ────────────────────────────────────────────────────
+  // Count non-cancelled bookings by day-of-week (0=Sun…6=Sat)
+  const dowCounts = Array(7).fill(0);
+  const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  for (const r of reservations.filter(r => r.status !== 'cancelled')) {
+    dowCounts[new Date(r.startDate).getDay()]++;
+  }
+  const peakByDow = dowLabels.map((label, i) => ({ label, bookings: dowCounts[i] }));
+
+  // Count bookings by calendar month (last 12 months)
+  const monthCounts: Record<string, number> = {};
+  const now = new Date();
+  for (let m = 11; m >= 0; m--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - m, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    monthCounts[key] = 0;
+  }
+  for (const r of reservations.filter(r => r.status !== 'cancelled')) {
+    const d   = new Date(r.startDate);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    if (key in monthCounts) monthCounts[key]++;
+  }
+  const peakByMonth = Object.entries(monthCounts).map(([month, bookings]) => ({ month, bookings }));
+
   res.json({
     totalRevenue:       Math.round(totalRevenue * 100) / 100,
     totalBookings:      reservations.filter(r => r.status !== 'cancelled').length,
     activeBoats:        boats.length,
     utilization,
+    peakByDow,
+    peakByMonth,
     recentReservations: reservations.slice(0, 20),
   });
 });
@@ -93,7 +121,6 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // ── PATCH /marinas/:id ────────────────────────────────────────────────────────
-// Owner-only: name, location, branding, widget colour.
 router.patch('/:id', requireAuth, requireMarinaOwner, async (req: AuthRequest, res) => {
   if (req.params.id !== req.marinaId) throw new AppError(403, 'You do not manage this marina');
   const data   = UpdateMarinaSchema.parse(req.body);
@@ -102,10 +129,9 @@ router.patch('/:id', requireAuth, requireMarinaOwner, async (req: AuthRequest, r
 });
 
 // ── POST /marinas/:id/staff ───────────────────────────────────────────────────
-// Owner-only: invite a new staff member by Clerk ID and assign their role.
 const AddStaffSchema = z.object({
   clerkId: z.string().min(1),
-  role:    z.enum(['manager', 'staff']), // owners cannot be created this way
+  role:    z.enum(['manager', 'staff']),
 });
 
 router.post('/:id/staff', requireAuth, requireMarinaOwner, async (req: AuthRequest, res) => {
@@ -122,7 +148,6 @@ router.post('/:id/staff', requireAuth, requireMarinaOwner, async (req: AuthReque
 });
 
 // ── DELETE /marinas/:id/staff/:clerkId ────────────────────────────────────────
-// Owner-only: remove a staff member. Owners cannot remove themselves.
 router.delete('/:id/staff/:clerkId', requireAuth, requireMarinaOwner, async (req: AuthRequest, res) => {
   if (req.params.id !== req.marinaId) throw new AppError(403, 'You do not manage this marina');
   if (req.params.clerkId === req.clerkId) throw new AppError(400, 'You cannot remove yourself');
@@ -135,7 +160,6 @@ router.delete('/:id/staff/:clerkId', requireAuth, requireMarinaOwner, async (req
 });
 
 // ── PATCH /marinas/:id/staff/:clerkId ─────────────────────────────────────────
-// Owner-only: change a staff member's role.
 const UpdateStaffSchema = z.object({ role: z.enum(['manager', 'staff']) });
 
 router.patch('/:id/staff/:clerkId', requireAuth, requireMarinaOwner, async (req: AuthRequest, res) => {
@@ -151,7 +175,6 @@ router.patch('/:id/staff/:clerkId', requireAuth, requireMarinaOwner, async (req:
 });
 
 // ── GET /marinas/:id/staff ────────────────────────────────────────────────────
-// Manager+: list all staff for this marina.
 router.get('/:id/staff', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
   if (req.params.id !== req.marinaId) throw new AppError(403, 'You do not manage this marina');
   const members = await prisma.staffMember.findMany({ where: { marinaId: req.params.id } });
@@ -159,4 +182,3 @@ router.get('/:id/staff', requireAuth, requireMarinaManager, async (req: AuthRequ
 });
 
 export default router;
-
