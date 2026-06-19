@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@clerk/nextjs';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  LineChart, Line, CartesianGrid, Legend,
 } from 'recharts';
 import { useApi } from '@/lib/useApi';
 
@@ -12,6 +13,8 @@ interface Reports {
   totalBookings:      number;
   activeBoats:        number;
   utilization:        { boatId: string; boatName: string; bookedDays: number; bookingCount: number }[];
+  peakByDow:          { label: string; bookings: number }[];
+  peakByMonth:        { month: string; bookings: number }[];
   recentReservations: any[];
 }
 
@@ -53,7 +56,7 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url);
   };
 
-  // ── PDF export (print-friendly HTML rendered in a new window) ────────────────
+  // ── PDF export ────────────────────────────────────────────────────────────────
   const handleExportPdf = () => {
     if (!reports) return;
     const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -132,6 +135,7 @@ export default function ReportsPage() {
         </div>
       ) : (
         <>
+          {/* KPI cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
             {stats.map(s => (
               <div key={s.label} className="bg-white rounded-xl border border-gray-200 p-5">
@@ -141,7 +145,7 @@ export default function ReportsPage() {
             ))}
           </div>
 
-          {/* Customer feedback summary */}
+          {/* Customer feedback */}
           {reports?.recentReservations && (() => {
             const withReviews = reports.recentReservations.filter((r: any) => r.boat?.reviews?.length);
             if (!withReviews.length) return null;
@@ -160,6 +164,7 @@ export default function ReportsPage() {
             );
           })()}
 
+          {/* Boat utilisation chart */}
           <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
             <h2 className="text-base font-semibold text-gray-900 mb-4">Boat utilisation (days booked)</h2>
             {reports?.utilization.length ? (
@@ -180,6 +185,40 @@ export default function ReportsPage() {
             )}
           </div>
 
+          {/* Peak times — day of week */}
+          {reports?.peakByDow && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+              <h2 className="text-base font-semibold text-gray-900 mb-1">Peak booking days</h2>
+              <p className="text-xs text-gray-400 mb-4">Number of bookings that started on each day of the week</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={reports.peakByDow} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                  <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                  <Tooltip formatter={(v: any) => [v, 'Bookings']} />
+                  <Bar dataKey="bookings" fill="#3b82f6" radius={[4,4,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Peak times — monthly trend */}
+          {reports?.peakByMonth && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+              <h2 className="text-base font-semibold text-gray-900 mb-1">Monthly booking trend</h2>
+              <p className="text-xs text-gray-400 mb-4">Bookings per month over the last 12 months</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={reports.peakByMonth} margin={{ top: 0, right: 16, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                  <Tooltip formatter={(v: any) => [v, 'Bookings']} />
+                  <Line type="monotone" dataKey="bookings" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Utilisation table */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100">
               <h2 className="text-base font-semibold text-gray-900">Utilisation breakdown</h2>
