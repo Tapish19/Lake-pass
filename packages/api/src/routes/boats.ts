@@ -7,14 +7,16 @@ import { AppError } from '../middleware/errorHandler';
 const router = Router();
 
 const CreateBoatSchema = z.object({
-  name:        z.string().min(1),
-  type:        z.string().min(1),
-  capacity:    z.number().int().positive(),
-  dailyRate:   z.number().positive(),
-  hourlyRate:  z.number().positive().optional(),
-  description: z.string().optional(),
-  amenities:   z.array(z.string()).default([]),
-  photoUrls:   z.array(z.string()).default([]),
+  name:             z.string().min(1),
+  type:             z.string().min(1),
+  capacity:         z.number().int().positive(),
+  dailyRate:        z.number().positive(),
+  hourlyRate:       z.number().positive().optional(),
+  description:      z.string().optional(),
+  amenities:        z.array(z.string()).default([]),
+  photoUrls:        z.array(z.string()).default([]),
+  // Minutes required between the end of one reservation and the start of the next
+  turnaroundBuffer: z.number().int().min(0).default(0),
 });
 
 const UpdateBoatSchema = CreateBoatSchema.partial().extend({
@@ -108,17 +110,15 @@ router.post('/', requireAuth, requireMarinaManager, async (req: AuthRequest, res
 });
 
 // ─── POST /boats/import-csv ───────────────────────────────────────────────────
-// Backend CSV import: receives pre-parsed rows from the dashboard component
-// and bulk-creates boats. Validates each row server-side so the dashboard
-// can't bypass validation by posting raw data.
 const CsvRowSchema = z.object({
-  name:        z.string().min(1),
-  type:        z.string().min(1),
-  capacity:    z.coerce.number().int().positive(),
-  dailyRate:   z.coerce.number().positive(),
-  hourlyRate:  z.coerce.number().positive().optional(),
-  description: z.string().optional(),
-  amenities:   z.string().optional(), // semicolon-separated, parsed here
+  name:             z.string().min(1),
+  type:             z.string().min(1),
+  capacity:         z.coerce.number().int().positive(),
+  dailyRate:        z.coerce.number().positive(),
+  hourlyRate:       z.coerce.number().positive().optional(),
+  description:      z.string().optional(),
+  amenities:        z.string().optional(),
+  turnaroundBuffer: z.coerce.number().int().min(0).default(0),
 });
 
 router.post('/import-csv', requireAuth, requireMarinaManager, async (req: AuthRequest, res) => {
@@ -134,14 +134,15 @@ router.post('/import-csv', requireAuth, requireMarinaManager, async (req: AuthRe
       const parsed = CsvRowSchema.parse(raw);
       await prisma.boat.create({
         data: {
-          marinaId:    req.marinaId!,
-          name:        parsed.name,
-          type:        parsed.type,
-          capacity:    parsed.capacity,
-          dailyRate:   parsed.dailyRate,
-          hourlyRate:  parsed.hourlyRate,
-          description: parsed.description,
-          amenities:   parsed.amenities
+          marinaId:        req.marinaId!,
+          name:            parsed.name,
+          type:            parsed.type,
+          capacity:        parsed.capacity,
+          dailyRate:       parsed.dailyRate,
+          hourlyRate:      parsed.hourlyRate,
+          description:     parsed.description,
+          turnaroundBuffer: parsed.turnaroundBuffer,
+          amenities:       parsed.amenities
             ? parsed.amenities.split(';').map(s => s.trim()).filter(Boolean)
             : [],
           photoUrls: [],
@@ -155,7 +156,6 @@ router.post('/import-csv', requireAuth, requireMarinaManager, async (req: AuthRe
 
   const created = results.filter(r => r.success).length;
   const failed  = results.filter(r => !r.success).length;
-
   res.status(201).json({ created, failed, results });
 });
 
