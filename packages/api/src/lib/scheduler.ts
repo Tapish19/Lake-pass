@@ -12,7 +12,7 @@
  * prevents double-sends if the process restarts.
  */
 import { prisma } from './prisma';
-import { sendReminder } from './notifications';
+import { sendReminder, sendWeatherAlert } from './notifications';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS  = 24 * HOUR_MS;
@@ -44,6 +44,12 @@ async function runReminderJob() {
       console.log(`[scheduler] reminder sent for reservation ${r.id}`);
     } catch (err) {
       console.error(`[scheduler] reminder failed for reservation ${r.id}:`, err);
+    }
+    // Best-effort — never let a weather lookup failure block the reminder
+    try {
+      await sendWeatherAlert(r as any);
+    } catch (err) {
+      console.error(`[scheduler] weather alert failed for reservation ${r.id}:`, err);
     }
   }
 }
