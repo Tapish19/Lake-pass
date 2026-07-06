@@ -60,6 +60,14 @@ export default function BookingScreen() {
     enabled:  !!(boat as any)?.marina?.id,
   });
 
+  // A waiver signed on a previous booking can be reused as long as the
+  // waiver text hasn't changed since (tracked server-side by version).
+  const { data: savedWaiver } = useQuery<{ hasSavedWaiver: boolean; signedAt: string | null; signerName: string | null }>({
+    queryKey: ['my-waiver'],
+    queryFn:  () => authedApi.get('/reservations/my-waiver').then(r => r.data),
+  });
+  const [useSavedWaiver, setUseSavedWaiver] = useState(true);
+
   const bookingMutation = useMutation({
     mutationFn: async () => {
       // 1. Create reservation (with add-ons so pricing is correct)
@@ -70,12 +78,17 @@ export default function BookingScreen() {
         addonIds:   selectedAddons,
       }).then(r => r.data);
 
-      // 2. Sign waiver (IP captured server-side)
-      await authedApi.post('/reservations/sign-waiver', {
-        reservationId: reservation.id,
-        signerName:    'self',
-        agreed:        true,
-      });
+      // 2. Apply waiver — reuse a previously signed one if available and
+      // selected, otherwise sign fresh (IP captured server-side)
+      if (savedWaiver?.hasSavedWaiver && useSavedWaiver) {
+        await authedApi.post(`/reservations/${reservation.id}/reuse-waiver`, {});
+      } else {
+        await authedApi.post('/reservations/sign-waiver', {
+          reservationId: reservation.id,
+          signerName:    'self',
+          agreed:        true,
+        });
+      }
 
       // 3. Create Stripe checkout session
       const checkout = await authedApi.post('/payments/checkout', {
@@ -171,13 +184,29 @@ export default function BookingScreen() {
         {step === 'waiver' && (
           <View style={st.card}>
             <Text style={st.cardTitle}>Liability Waiver</Text>
-            <ScrollView style={st.waiverScroll} nestedScrollEnabled>
-              <Text style={st.waiverText}>{WAIVER_TEXT}</Text>
-            </ScrollView>
-            <View style={st.waiverCheck}>
-              <Switch value={waiverAgreed} onValueChange={setWaiverAgreed} trackColor={{ true: '#1d6fdb' }} />
-              <Text style={st.waiverCheckLabel}>I have read and agree to the waiver above</Text>
-            </View>
+            {savedWaiver?.hasSavedWaiver && (
+              <View style={st.savedWaiverBox}>
+                <Text style={st.savedWaiverTitle}>✓ We already have a signed waiver on file</Text>
+                <Text style={st.savedWaiverSub}>
+                  Signed by {savedWaiver.signerName} on {savedWaiver.signedAt ? new Date(savedWaiver.signedAt).toLocaleDateString() : ''}
+                </Text>
+                <View style={st.waiverCheck}>
+                  <Switch value={useSavedWaiver} onValueChange={setUseSavedWaiver} trackColor={{ true: '#1d6fdb' }} />
+                  <Text style={st.waiverCheckLabel}>Reuse this waiver for this booking</Text>
+                </View>
+              </View>
+            )}
+            {(!savedWaiver?.hasSavedWaiver || !useSavedWaiver) && (
+              <>
+                <ScrollView style={st.waiverScroll} nestedScrollEnabled>
+                  <Text style={st.waiverText}>{WAIVER_TEXT}</Text>
+                </ScrollView>
+                <View style={st.waiverCheck}>
+                  <Switch value={waiverAgreed} onValueChange={setWaiverAgreed} trackColor={{ true: '#1d6fdb' }} />
+                  <Text style={st.waiverCheckLabel}>I have read and agree to the waiver above</Text>
+                </View>
+              </>
+            )}
           </View>
         )}
 
@@ -216,7 +245,7 @@ export default function BookingScreen() {
         {step !== 'review' ? (
           <TouchableOpacity
             style={[st.nextBtn, step==='waiver' && !waiverAgreed && st.nextBtnOff]}
-            disabled={step === 'waiver' && !waiverAgreed}
+            disabled={step === 'waiver' && !(waiverAgreed || (savedWaiver?.hasSavedWaiver && useSavedWaiver))}
             onPress={() => setStep(STEPS[stepIdx+1])}>
             <Text style={st.nextBtnTxt}>Continue</Text>
           </TouchableOpacity>
@@ -269,6 +298,9 @@ const st = StyleSheet.create({
   waiverText:     { fontSize: 12, color: '#374151', lineHeight: 20 },
   waiverCheck:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
   waiverCheckLabel:{ flex: 1, fontSize: 13, color: '#374151', lineHeight: 20 },
+  savedWaiverBox: { backgroundColor: '#eff6ff', borderRadius: 12, padding: 14, marginBottom: 12, gap: 8 },
+  savedWaiverTitle:{ fontSize: 14, fontWeight: '700', color: '#1d6fdb' },
+  savedWaiverSub: { fontSize: 12, color: '#475569' },
   priceLine:      { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
   priceLabel:     { fontSize: 14, color: '#6b7280' },
   priceValue:     { fontSize: 14, color: '#111827' },
