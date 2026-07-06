@@ -102,6 +102,26 @@ router.get('/:id/reports', requireAuth, requireMarinaManager, async (req: AuthRe
   }
   const peakByMonth = Object.entries(monthCounts).map(([month, bookings]) => ({ month, bookings }));
 
+  // Count bookings by time-of-day bucket, based on the hour portion of
+  // startDate (covers hourly rentals; daily rentals will mostly land in
+  // whatever hour they were originally entered as, which is still useful
+  // signal for "when do people book a slot to start").
+  const HOUR_BUCKETS: { label: string; from: number; to: number }[] = [
+    { label: 'Early AM (12–6am)',  from: 0,  to: 6  },
+    { label: 'Morning (6–9am)',    from: 6,  to: 9  },
+    { label: 'Mid-day (9am–12pm)', from: 9,  to: 12 },
+    { label: 'Afternoon (12–4pm)', from: 12, to: 16 },
+    { label: 'Evening (4–8pm)',    from: 16, to: 20 },
+    { label: 'Night (8pm–12am)',   from: 20, to: 24 },
+  ];
+  const hourCounts = HOUR_BUCKETS.map(() => 0);
+  for (const r of reservations.filter(r => r.status !== 'cancelled')) {
+    const hour = new Date(r.startDate).getHours();
+    const idx  = HOUR_BUCKETS.findIndex(b => hour >= b.from && hour < b.to);
+    if (idx !== -1) hourCounts[idx]++;
+  }
+  const peakByHour = HOUR_BUCKETS.map((b, i) => ({ hourLabel: b.label, bookings: hourCounts[i] }));
+
   res.json({
     totalRevenue:       Math.round(totalRevenue * 100) / 100,
     totalBookings:      reservations.filter(r => r.status !== 'cancelled').length,
@@ -109,6 +129,7 @@ router.get('/:id/reports', requireAuth, requireMarinaManager, async (req: AuthRe
     utilization,
     peakByDow,
     peakByMonth,
+    peakByHour,
     recentReservations: reservations.slice(0, 20),
   });
 });
