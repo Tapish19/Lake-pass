@@ -15,10 +15,10 @@ export default function HomeScreen() {
   const [date,         setDate]         = useState('');
 
   const handleSearch = () => {
-    const qs = new URLSearchParams();
-    if (selectedType !== 'Any') qs.set('type', selectedType);
-    if (date) qs.set('date', date);
-    router.push({ pathname: '/(tabs)/search', params: Object.fromEntries(qs) });
+    const params: Record<string, string> = {};
+    if (selectedType !== 'Any') params.type = selectedType;
+    if (date) params.date = date;
+    router.push({ pathname: '/(tabs)/search', params });
   };
 
   return (
