@@ -25,6 +25,17 @@ import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
 
+// ─── PATCH /team/push-token ──────────────────────────────────────────────────
+// Lets a staff member register an Expo push token on their own StaffMember
+// row so they receive alerts for new bookings / walk-ins / maintenance.
+router.patch('/push-token', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
+  const { token } = z.object({ token: z.string().min(1) }).parse(req.body);
+  const member = await prisma.staffMember.findFirst({ where: { clerkId: req.clerkId, marinaId: req.marinaId! } });
+  if (!member) throw new AppError(404, 'Staff record not found');
+  await prisma.staffMember.update({ where: { id: member.id }, data: { pushToken: token } });
+  res.json({ ok: true });
+});
+
 // ─── GET /team ───────────────────────────────────────────────────────────────
 // Returns both confirmed staff members and pending invites so the UI can show
 // one unified list.
