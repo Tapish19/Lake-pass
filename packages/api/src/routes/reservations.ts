@@ -323,7 +323,16 @@ router.get('/', requireAuth, async (req: AuthRequest, res) => {
     include: { boat: { include: { marina: true } }, addons: true },
     orderBy: { startDate: 'asc' },
   });
-  res.json(reservations);
+
+  // Review is keyed by (boatId, userId) rather than reservationId, so look
+  // up which boats this consumer has already reviewed and flag each
+  // reservation accordingly — used by the mobile app's post-trip prompt.
+  const reviewedBoatIds = new Set(
+    (await prisma.review.findMany({ where: { userId: req.userId }, select: { boatId: true } })).map(r => r.boatId),
+  );
+  const withReviewFlag = reservations.map(r => ({ ...r, hasReview: reviewedBoatIds.has(r.boatId) }));
+
+  res.json(withReviewFlag);
 });
 
 // ── GET /reservations/marina ──────────────────────────────────────────────────
