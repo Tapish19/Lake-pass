@@ -15,6 +15,7 @@ interface Reports {
   utilization:        { boatId: string; boatName: string; bookedDays: number; bookingCount: number }[];
   peakByDow:          { label: string; bookings: number }[];
   peakByMonth:        { month: string; bookings: number }[];
+  peakByHour:         { hourLabel: string; bookings: number }[];
   recentReservations: any[];
 }
 
@@ -214,6 +215,22 @@ export default function ReportsPage() {
                   <Tooltip formatter={(v: any) => [v, 'Bookings']} />
                   <Line type="monotone" dataKey="bookings" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Peak times — time of day */}
+          {reports?.peakByHour && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+              <h2 className="text-base font-semibold text-gray-900 mb-1">Peak time of day</h2>
+              <p className="text-xs text-gray-400 mb-4">Number of bookings by the time of day they start</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={reports.peakByHour} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                  <XAxis dataKey="hourLabel" tick={{ fontSize: 10 }} interval={0} angle={-15} textAnchor="end" height={50} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                  <Tooltip formatter={(v: any) => [v, 'Bookings']} />
+                  <Bar dataKey="bookings" fill="#8b5cf6" radius={[4,4,0,0]} />
+                </BarChart>
               </ResponsiveContainer>
             </div>
           )}
