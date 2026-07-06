@@ -138,6 +138,23 @@ export default function ReservationCalendar() {
     },
   });
 
+  const rescheduleMutation = useMutation({
+    mutationFn: ({ id, start, end }: { id: string; start: Date; end: Date }) =>
+      api.patch(`/reservations/${id}/reschedule`, { startDate: start.toISOString(), endDate: end.toISOString() }),
+    onMutate: async ({ id, start, end }) => {
+      await queryClient.cancelQueries({ queryKey: ['marina-reservations'] });
+      const previous = queryClient.getQueryData<Reservation[]>(['marina-reservations']);
+      queryClient.setQueryData<Reservation[]>(['marina-reservations'], old =>
+        old?.map(r => r.id === id ? { ...r, startDate: start.toISOString(), endDate: end.toISOString() } : r));
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['marina-reservations'], context.previous);
+      window.alert('Could not reschedule — the new time may conflict with another booking or the turnaround buffer.');
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['marina-reservations'] }),
+  });
+
   const events = useMemo(() =>
     reservations
       .filter(r => r.status !== 'cancelled')
@@ -161,6 +178,13 @@ export default function ReservationCalendar() {
     if (!pendingSlot) return;
     blockoutMutation.mutate({ boatId, start: pendingSlot.start, end: pendingSlot.end, reason });
   };
+
+  // Drag an existing reservation event to a new date/time, or resize its edge
+  const handleEventDrop = ({ event, start, end }: { event: any; start: Date; end: Date }) => {
+    if (event.type === 'blockout') return; // blockouts aren't reservations — ignore
+    rescheduleMutation.mutate({ id: event.id, start, end });
+  };
+  const handleEventResize = handleEventDrop;
 
   const eventStyleGetter = (event: any) => ({
     style: {
@@ -198,7 +222,7 @@ export default function ReservationCalendar() {
         </div>
 
         <p className="text-xs text-gray-400 mb-3">
-          Tip: drag-select dates on the calendar to create a maintenance blockout.
+          Tip: drag-select empty dates to create a maintenance blockout, or drag an existing booking to reschedule it.
         </p>
 
         {isLoading ? (
@@ -216,11 +240,15 @@ export default function ReservationCalendar() {
             onNavigate={setDate}
             eventPropGetter={eventStyleGetter}
             selectable
+            resizable
+            draggableAccessor={(e: any) => e.type !== 'blockout'}
             onSelectSlot={handleSelectSlot}
+            onEventDrop={handleEventDrop}
+            onEventResize={handleEventResize}
             popup
             tooltipAccessor={(e: any) => e.type === 'blockout'
               ? `Blockout: ${e.title}`
-              : `${e.title} (${e.resource?.status})`
+              : `${e.title} (${e.resource?.status}) — drag to reschedule`
             }
           />
         )}
