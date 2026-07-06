@@ -54,6 +54,9 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelation?: string;
 }
 
 export interface Review {
@@ -63,4 +66,42 @@ export interface Review {
   rating: number;
   comment?: string;
   createdAt: string;
+}
+
+export interface SavedPaymentMethod {
+  id: string;
+  brand?: string;
+  last4?: string;
+  expMonth?: number;
+  expYear?: number;
+  isDefault?: boolean;
+}
+
+export interface CalendarFeed {
+  id: string;
+  marinaId: string;
+  boatId?: string | null;
+  label?: string | null;
+  sourceType: 'ics_url' | 'ics_upload' | 'google';
+  url?: string | null;
+  lastSyncedAt?: string | null;
+  lastSyncStatus?: string | null;
+  lastSyncError?: string | null;
+  importedCount: number;
+  isActive: boolean;
+}
+
+export interface PeakHourBucket {
+  hourLabel: string; // e.g. "6–9am"
+  bookings: number;
+}
+
+export interface WeatherSnapshot {
+  temp: number;
+  feelsLike?: number;
+  desc: string;
+  icon: string;
+  wind: number;
+  humidity: number;
+  alert?: string | null;
 }
