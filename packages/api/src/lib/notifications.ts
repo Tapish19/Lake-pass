@@ -6,6 +6,8 @@
  * Install:  pnpm add @sendgrid/mail twilio  (in packages/api)
  */
 import { prisma } from './prisma';
+import { getCurrentWeather } from './weather';
+import { sendConsumerPush } from './push';
 
 // ── lazy-import so the API boots without the packages if omitted ──────────────
 async function getSendGrid() {
@@ -129,6 +131,34 @@ export async function sendNoShowNotice(r: ReservationInfo) {
     <p>If you believe this is an error, please contact ${r.boat.marina.name} directly${r.boat.marina.phone ? ` at ${r.boat.marina.phone}` : ''}.</p>
   `;
   await sendEmail(r.user.email, subject, html, r.id, 'no_show');
+}
+
+interface WeatherAlertableReservation extends ReservationInfo {
+  user: ReservationInfo['user'] & { id: string };
+  boat: ReservationInfo['boat'] & { marina: ReservationInfo['boat']['marina'] & { latitude: number | null; longitude: number | null } };
+}
+
+/**
+ * Proactive "heads up" alert (email + push) when severe weather or high
+ * winds are forecast for an upcoming reservation. Called by the scheduler
+ * ~24h before each booking. No-ops gracefully if OPENWEATHER_API_KEY or
+ * marina coordinates aren't configured.
+ */
+export async function sendWeatherAlert(r: WeatherAlertableReservation) {
+  const { latitude, longitude } = r.boat.marina;
+  if (latitude == null || longitude == null) return;
+
+  const weather = await getCurrentWeather(latitude, longitude);
+  if (!weather?.alert) return;
+
+  const subject = `Weather heads-up for your ${r.boat.name} trip`;
+  const html = `
+    <h2>🌧️ Weather heads-up</h2>
+    <p>Hi ${r.user.name}, ${weather.alert}</p>
+    <p>Your booking at <strong>${r.boat.marina.name}</strong> is still on for ${formatDate(r.startDate)} — just wanted you to be prepared.</p>
+  `;
+  await sendEmail(r.user.email, subject, html, r.id, 'weather_alert');
+  await sendConsumerPush(r.user.id, '🌧️ Weather heads-up', weather.alert, { type: 'weather_alert', reservationId: r.id }).catch(() => {});
 }
 
 export async function sendCancellationNotice(r: ReservationInfo) {
