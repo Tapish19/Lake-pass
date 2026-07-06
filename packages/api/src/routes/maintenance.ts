@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { requireAuth, requireMarinaStaff, requireMarinaManager, AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
+import { notifyStaffMaintenance } from '../lib/push';
 
 const router = Router();
 
@@ -60,6 +61,9 @@ router.post('/', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) 
       performedBy: data.performedBy,
     },
   });
+
+  await notifyStaffMaintenance(req.marinaId!, boat.name, data.type, data.notes).catch(() => {});
+
   res.status(201).json(log);
 });
 
