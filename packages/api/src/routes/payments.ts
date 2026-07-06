@@ -25,6 +25,20 @@ router.post('/checkout', requireAuth, async (req: AuthRequest, res) => {
   if (r.paymentStatus === 'paid') throw new AppError(400, 'Already paid');
   if (!r.boat.marina.stripeAccountId) throw new AppError(400, 'Marina has not connected Stripe yet');
 
+  // Lazily create a Stripe Customer so the card used here gets attached to
+  // the consumer's saved-payment-methods list (per the "saved automatically"
+  // promise shown in the app), not just charged once and forgotten.
+  let stripeCustomerId = r.user.stripeCustomerId;
+  if (!stripeCustomerId) {
+    const customer = await stripe.customers.create({
+      email: r.user.email,
+      name:  r.user.name,
+      metadata: { lakePassUserId: r.user.id },
+    });
+    stripeCustomerId = customer.id;
+    await prisma.user.update({ where: { id: r.user.id }, data: { stripeCustomerId } });
+  }
+
   // Use stored totalAmount (which includes add-ons) or recalculate
   const totalAmt   = r.totalAmount ?? r.boat.dailyRate;
   const unitAmount = Math.round(totalAmt * 100);
@@ -56,11 +70,14 @@ router.post('/checkout', requireAuth, async (req: AuthRequest, res) => {
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     payment_method_types: ['card'],
-    customer_email: r.user.email,
+    customer: stripeCustomerId,
     line_items: lineItems,
     payment_intent_data: {
       application_fee_amount: appFee,
       transfer_data: { destination: r.boat.marina.stripeAccountId },
+      // Save the card to the customer so it shows up in "Payment Methods"
+      // for one-tap reuse on the next booking.
+      setup_future_usage: 'off_session',
     },
     metadata: { reservationId: r.id },
     success_url: `${CUSTOMER_WEB_URL}/trips?payment=success`,
@@ -75,7 +92,51 @@ router.post('/checkout', requireAuth, async (req: AuthRequest, res) => {
   res.json({ url: session.url });
 });
 
-// ── POST /payments/webhook ────────────────────────────────────────────────────
+// ── POST /payments/pay-with-saved-card ────────────────────────────────────────
+// Charges a reservation immediately using a previously saved payment method,
+// skipping the Stripe Checkout redirect entirely.
+router.post('/pay-with-saved-card', requireAuth, async (req: AuthRequest, res) => {
+  if (!req.userId) throw new AppError(403, 'Consumer account required');
+  const { reservationId, paymentMethodId } = z.object({
+    reservationId:   z.string(),
+    paymentMethodId: z.string(),
+  }).parse(req.body);
+
+  const r = await prisma.reservation.findUniqueOrThrow({
+    where:   { id: reservationId },
+    include: { boat: { include: { marina: true } }, user: true },
+  });
+  if (r.userId !== req.userId) throw new AppError(403, 'You do not own this reservation');
+  if (r.paymentStatus === 'paid') throw new AppError(400, 'Already paid');
+  if (!r.boat.marina.stripeAccountId) throw new AppError(400, 'Marina has not connected Stripe yet');
+  if (!r.user.stripeCustomerId) throw new AppError(400, 'No saved payment methods on file');
+
+  const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
+  if (pm.customer !== r.user.stripeCustomerId) throw new AppError(403, 'Payment method not owned by this account');
+
+  const totalAmt = r.totalAmount ?? r.boat.dailyRate;
+
+  const intent = await stripe.paymentIntents.create({
+    amount:                  Math.round(totalAmt * 100),
+    currency:                'usd',
+    customer:                r.user.stripeCustomerId,
+    payment_method:          paymentMethodId,
+    off_session:             true,
+    confirm:                 true,
+    application_fee_amount:  Math.round(totalAmt * 100 * PLATFORM_FEE_RATE),
+    transfer_data:           { destination: r.boat.marina.stripeAccountId },
+    metadata:                { reservationId: r.id },
+  });
+
+  if (intent.status === 'succeeded') {
+    await prisma.reservation.update({
+      where: { id: r.id },
+      data:  { status: 'confirmed', paymentStatus: 'paid', stripeSessionId: intent.id },
+    });
+  }
+
+  res.json({ status: intent.status, paymentIntentId: intent.id });
+});
 router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
   if (!sig) return res.status(400).send('Missing stripe-signature');
