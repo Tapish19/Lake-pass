@@ -6,14 +6,15 @@ import { useApi } from '@/lib/useApi';
 
 interface Props { marinaId: string; onComplete: () => void }
 
-type Step = 'welcome' | 'profile' | 'stripe' | 'boat' | 'done';
-const STEPS: Step[] = ['welcome', 'profile', 'stripe', 'boat', 'done'];
+type Step = 'welcome' | 'profile' | 'stripe' | 'boat' | 'calendar' | 'done';
+const STEPS: Step[] = ['welcome', 'profile', 'stripe', 'boat', 'calendar', 'done'];
 
 const STEP_LABELS: Record<Step, string> = {
   welcome: 'Welcome',
   profile: 'Marina Profile',
   stripe:  'Payments',
   boat:    'First Boat',
+  calendar:'Calendar',
   done:    'All set!',
 };
 
@@ -31,6 +32,9 @@ export default function OnboardingWizard({ marinaId, onComplete }: Props) {
   const [step, setStep]       = useState<Step>('welcome');
   const [profile, setProfile] = useState<ProfileForm>({ name: '', lake: '', address: '', city: '', state: '', phone: '', website: '' });
   const [boat, setBoat]       = useState<BoatForm>({ name: '', type: 'Pontoon', capacity: '8', dailyRate: '', description: '' });
+  const [newBoatId, setNewBoatId] = useState<string | null>(null);
+  const [calUrl, setCalUrl]       = useState('');
+  const [calText, setCalText]     = useState('');
 
   const stepIdx      = STEPS.indexOf(step);
   const progressPct  = Math.round((stepIdx / (STEPS.length - 1)) * 100);
@@ -57,10 +61,22 @@ export default function OnboardingWizard({ marinaId, onComplete }: Props) {
       amenities:  [],
       photoUrls:  [],
     }),
-    onSuccess: () => {
+    onSuccess: (r) => {
       queryClient.invalidateQueries({ queryKey: ['boats'] });
-      setStep('done');
+      setNewBoatId(r.data.id);
+      setStep('calendar');
     },
+  });
+
+  const importCalendar = useMutation({
+    mutationFn: () => api.post('/calendar/import', {
+      boatId:     newBoatId,
+      sourceType: calUrl ? 'ics_url' : 'ics_upload',
+      url:        calUrl || undefined,
+      icsText:    calUrl ? undefined : calText,
+      label:      calUrl ? 'Imported at onboarding' : 'Pasted .ics at onboarding',
+    }),
+    onSuccess: () => setStep('done'),
   });
 
   return (
@@ -202,10 +218,53 @@ export default function OnboardingWizard({ marinaId, onComplete }: Props) {
                 <button onClick={() => addBoat.mutate()}
                   disabled={!boat.name || !boat.dailyRate || addBoat.isPending}
                   className="flex-1 bg-brand-600 text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50">
-                  {addBoat.isPending ? 'Saving…' : 'Add Boat & Finish'}
+                  {addBoat.isPending ? 'Saving…' : 'Continue'}
                 </button>
               </div>
               {addBoat.isError && <p className="text-xs text-red-500 mt-2">Failed to add boat. Please try again.</p>}
+            </div>
+          )}
+
+          {/* ── CALENDAR IMPORT ── */}
+          {step === 'calendar' && (
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 mb-1">Import your existing bookings</h2>
+              <p className="text-sm text-gray-500 mb-5">
+                Already taking bookings on Google Calendar, Airbnb, or a spreadsheet? Paste the calendar's
+                .ics URL (Google Calendar → Settings → "Secret address in iCal format") or paste raw .ics
+                text below to block those dates automatically. You can skip this and do it later from Settings.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Calendar URL (.ics)</label>
+                  <input type="url" value={calUrl} onChange={e => { setCalUrl(e.target.value); setCalText(''); }}
+                    placeholder="https://calendar.google.com/calendar/ical/.../basic.ics"
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-400">
+                  <div className="flex-1 h-px bg-gray-100" /> or paste .ics text <div className="flex-1 h-px bg-gray-100" />
+                </div>
+                <div>
+                  <textarea rows={4} value={calText} onChange={e => { setCalText(e.target.value); setCalUrl(''); }}
+                    placeholder="BEGIN:VCALENDAR..."
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setStep('done')}
+                  className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm">Skip for now</button>
+                <button onClick={() => importCalendar.mutate()}
+                  disabled={(!calUrl && !calText) || importCalendar.isPending}
+                  className="flex-1 bg-brand-600 text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50">
+                  {importCalendar.isPending ? 'Importing…' : 'Import & Finish'}
+                </button>
+              </div>
+              {importCalendar.isError && <p className="text-xs text-red-500 mt-2">Could not import that calendar. Check the URL/text and try again, or skip for now.</p>}
+              {importCalendar.isSuccess && (
+                <p className="text-xs text-green-600 mt-2">
+                  Imported {(importCalendar.data as any)?.data?.imported ?? 0} blocked date(s) — finishing up…
+                </p>
+              )}
             </div>
           )}
 
