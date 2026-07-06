@@ -2,7 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Calendar, dateFnsLocalizer, View, SlotInfo } from 'react-big-calendar';
-import  withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
+import withDragAndDrop from 'react-big-calendar/lib/addons/dragAndDrop';
+import type { EventInteractionArgs } from 'react-big-calendar/lib/addons/dragAndDrop';
 import { format, parse, startOfWeek, getDay } from 'date-fns';
 import { enUS } from 'date-fns/locale/en-US';
 import { useState, useMemo } from 'react';
@@ -180,9 +181,9 @@ export default function ReservationCalendar() {
   };
 
   // Drag an existing reservation event to a new date/time, or resize its edge
-  const handleEventDrop = ({ event, start, end }: { event: any; start: Date; end: Date }) => {
+  const handleEventDrop = ({ event, start, end }: EventInteractionArgs<any>) => {
     if (event.type === 'blockout') return; // blockouts aren't reservations — ignore
-    rescheduleMutation.mutate({ id: event.id, start, end });
+    rescheduleMutation.mutate({ id: event.id, start: new Date(start), end: new Date(end) });
   };
   const handleEventResize = handleEventDrop;
 

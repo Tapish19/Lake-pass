@@ -16,7 +16,7 @@ import addonsRoutes       from './routes/addons';
 import favoritesRoutes    from './routes/favorites';
 import teamRoutes         from './routes/team';
 import maintenanceRoutes  from './routes/maintenance';
-import calendarRoutes     from './routes/calendar';
+import calendarRoutes     from './routes/calender';
 import weatherRoutes      from './routes/weather';
 import { errorHandler }   from './middleware/errorHandler';
 import { startReminderScheduler } from './lib/scheduler';
