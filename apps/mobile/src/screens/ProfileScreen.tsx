@@ -12,7 +12,8 @@ import api from '@/lib/api';
 
 interface Reservation {
   id: string; startDate: string; endDate: string; status: string; totalAmount?: number;
-  boat: { name: string; type: string; marina: { name: string } };
+  boat: { id: string; name: string; type: string; marina: { name: string } };
+  hasReview?: boolean;
 }
 interface BoatListing {
   id: string; name: string; type: string; dailyRate: number; marina: { name: string; lake: string };
@@ -47,6 +48,9 @@ export default function ProfileScreen() {
   const [showEmergency, setShowEmergency]   = useState(false);
   const [showPayments,  setShowPayments]    = useState(false);
   const [emergencyForm, setEmergencyForm]   = useState<EmergencyContact>({ name: '', phone: '', relation: '' });
+  const [reviewTarget,  setReviewTarget]    = useState<Reservation | null>(null);
+  const [reviewRating,  setReviewRating]    = useState(5);
+  const [reviewComment, setReviewComment]   = useState('');
 
   const initials = (user?.fullName ?? user?.primaryEmailAddress?.emailAddress ?? '?')
     .split(' ').map(p => p[0]).join('').slice(0,2).toUpperCase();
@@ -78,6 +82,21 @@ export default function ProfileScreen() {
   const removeFav = useMutation({
     mutationFn: (boatId: string) => authedApi.post(`/favorites/${boatId}`, {}),
     onSuccess:  () => queryClient.invalidateQueries({ queryKey: ['favorites'] }),
+  });
+
+  const submitReview = useMutation({
+    mutationFn: () => authedApi.post(`/boats/${reviewTarget!.boat.id}/reviews`, {
+      rating:  reviewRating,
+      comment: reviewComment || undefined,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-reservations'] });
+      setReviewTarget(null);
+      setReviewRating(5);
+      setReviewComment('');
+      Alert.alert('Thanks!', 'Your review has been posted.');
+    },
+    onError: (err: any) => Alert.alert('Could not post review', err?.response?.data?.error ?? 'Please try again.'),
   });
 
   const saveEmergency = useMutation({
@@ -192,6 +211,11 @@ export default function ProfileScreen() {
                       <Text style={st.cardMeta}>{r.boat?.marina?.name} · {r.boat?.type}</Text>
                       <Text style={st.cardDates}>{format(new Date(r.startDate),'MMM d')} – {format(new Date(r.endDate),'MMM d, yyyy')}</Text>
                       {r.totalAmount != null && <Text style={st.cardAmt}>${r.totalAmount.toFixed(2)}</Text>}
+                      {r.status === 'checked_out' && !r.hasReview && (
+                        <TouchableOpacity style={st.reviewPromptBtn} onPress={() => setReviewTarget(r)}>
+                          <Text style={st.reviewPromptText}>⭐ Rate this trip</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   );
                 }}
@@ -316,6 +340,42 @@ export default function ProfileScreen() {
           )}
         </SafeAreaView>
       </Modal>
+
+      <Modal visible={!!reviewTarget} animationType="slide" transparent>
+        <View style={st.reviewBackdrop}>
+          <View style={st.reviewSheet}>
+            <Text style={st.cardTitle}>How was {reviewTarget?.boat?.name}?</Text>
+            <View style={st.starRow}>
+              {[1,2,3,4,5].map(n => (
+                <TouchableOpacity key={n} onPress={() => setReviewRating(n)}>
+                  <Text style={{ fontSize: 32 }}>{n <= reviewRating ? '⭐' : '☆'}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={st.reviewInput}
+              placeholder="Tell other boaters about your trip (optional)"
+              multiline
+              value={reviewComment}
+              onChangeText={setReviewComment}
+            />
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              <TouchableOpacity style={st.reviewSkipBtn} onPress={() => setReviewTarget(null)}>
+                <Text style={st.reviewSkipText}>Maybe later</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[st.reviewSubmitBtn, submitReview.isPending && { opacity: 0.6 }]}
+                disabled={submitReview.isPending}
+                onPress={() => submitReview.mutate()}
+              >
+                {submitReview.isPending
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={st.reviewSubmitText}>Post Review</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -355,4 +415,15 @@ const st = StyleSheet.create({
   modalTitle:       { fontSize: 18, fontWeight: '700', color: '#111827' },
   fieldLabel:       { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 4 },
   input:            { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, fontSize: 15, color: '#111827', backgroundColor: '#fff' },
+  reviewPromptBtn:  { marginTop: 10, alignSelf: 'flex-start', backgroundColor: '#fef3c7', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 6 },
+  reviewPromptText: { fontSize: 12, fontWeight: '700', color: '#92400e' },
+  reviewBackdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  reviewSheet:      { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+  cardTitle:        { fontSize: 17, fontWeight: '700', color: '#111827', marginBottom: 12 },
+  starRow:          { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 16 },
+  reviewInput:      { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 12, padding: 12, fontSize: 14, color: '#111827', minHeight: 80, textAlignVertical: 'top' },
+  reviewSkipBtn:    { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 12, backgroundColor: '#f1f5f9' },
+  reviewSkipText:   { color: '#475569', fontWeight: '600' },
+  reviewSubmitBtn:  { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 12, backgroundColor: '#1d6fdb' },
+  reviewSubmitText: { color: '#fff', fontWeight: '700' },
 });
