@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { ClerkProvider } from '@clerk/nextjs';
 import Providers from './providers';
+import AccountSync from '@/components/AccountSync';
 import ServiceWorkerRegister from '@/components/reservations/ServiceWorkerRegister';
 import OfflineIndicator from '@/components/reservations/OfflineIndicator';
 import './globals.css';
@@ -16,7 +17,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <html lang="en">
         <body>
           <ServiceWorkerRegister />
-          <Providers>{children}</Providers>
+          <Providers>
+            <AccountSync />
+            {children}
+          </Providers>
           <OfflineIndicator />
         </body>
       </html>
