@@ -1,3 +1,5 @@
+// path: apps/dashboard/src/app/(dashboard)/layout.tsx
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -34,6 +36,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // Show wizard if: owner, marina loaded, not dismissed, and onboarding not yet completed
   const showWizard = hasStaffAccess && isOwner && !wizardDismissed && me?.hasCompletedOnboarding === false;
 
+  // A query error only means "no access" if we've never successfully loaded
+  // `me` yet. If we already have valid staff data cached and a *background*
+  // refetch fails (tab refocus, brief network blip, token refresh in
+  // flight), keep showing the dashboard rather than bouncing an actual
+  // owner/staff member to the "not linked" screen.
+  const hasNeverLoaded = me === undefined;
+
   let mainContent = children;
   if (isResolvingStaff) {
     mainContent = (
@@ -41,7 +50,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         Loading marina access…
       </div>
     );
-  } else if (meError || !hasStaffAccess) {
+  } else if ((meError && hasNeverLoaded) || (!meError && !hasStaffAccess)) {
     mainContent = (
       <div className="mx-auto mt-16 max-w-xl rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-950 shadow-sm">
         <h1 className="text-lg font-semibold">Marina access required</h1>
