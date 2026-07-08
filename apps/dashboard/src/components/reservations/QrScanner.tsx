@@ -16,9 +16,9 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useApi } from '@/lib/useApi';
+import { useOfflineApi } from '@/lib/useOfflineApi';
 
-type ScanState = 'idle' | 'scanning' | 'found' | 'success' | 'error';
+type ScanState = 'idle' | 'scanning' | 'found' | 'success' | 'queued' | 'error';
 
 interface CheckInResult {
   id: string;
@@ -30,7 +30,7 @@ interface CheckInResult {
 }
 
 export default function QrScanner({ onClose }: { onClose: () => void }) {
-  const api         = useApi();
+  const { api }      = useOfflineApi();
   const queryClient = useQueryClient();
   const videoRef    = useRef<HTMLVideoElement>(null);
   const streamRef   = useRef<MediaStream | null>(null);
@@ -40,10 +40,21 @@ export default function QrScanner({ onClose }: { onClose: () => void }) {
   const [message, setMessage] = useState('');
   const [result, setResult]   = useState<CheckInResult | null>(null);
   const [cameraError, setCameraError] = useState('');
+  const [scannedId, setScannedId] = useState('');
 
   const checkInMutation = useMutation({
-    mutationFn: (reservationId: string) => api.patch(`/reservations/${reservationId}/check-in`, {}),
-    onSuccess: (res) => {
+    mutationFn: (reservationId: string) => api.patch(
+      `/reservations/${reservationId}/check-in`,
+      {},
+      `Check in reservation ${reservationId}`,
+    ),
+    onSuccess: (res: any) => {
+      if (res?.queued) {
+        // No server data to show yet — this reservation will actually be
+        // marked checked-in once we're back online and the queue flushes.
+        setState('queued');
+        return;
+      }
       setResult(res.data);
       setState('success');
       queryClient.invalidateQueries({ queryKey: ['marina-reservations'] });
@@ -57,9 +68,11 @@ export default function QrScanner({ onClose }: { onClose: () => void }) {
   const handleScannedCode = useCallback((text: string) => {
     // Stop further scans immediately
     readerRef.current?.reset?.();
+    const reservationId = text.trim();
+    setScannedId(reservationId);
     setState('found');
-    setMessage(`Scanning reservation: ${text.slice(0, 12)}…`);
-    checkInMutation.mutate(text.trim());
+    setMessage(`Scanning reservation: ${reservationId.slice(0, 12)}…`);
+    checkInMutation.mutate(reservationId);
   }, [checkInMutation]);
 
   const startScanner = useCallback(async () => {
@@ -184,6 +197,23 @@ export default function QrScanner({ onClose }: { onClose: () => void }) {
               <p className="text-xs text-gray-400 mt-1">
                 {new Date(result.checkedInAt).toLocaleTimeString()}
               </p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={reset} className="flex-1 border border-gray-200 rounded-lg py-2 text-sm">Scan Another</button>
+              <button onClick={onClose} className="flex-1 bg-brand-600 text-white rounded-lg py-2 text-sm font-semibold">Done</button>
+            </div>
+          </div>
+        )}
+
+        {state === 'queued' && (
+          <div className="text-center py-6 space-y-4">
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto text-3xl">📶</div>
+            <div>
+              <p className="font-semibold text-gray-900 text-lg">Saved offline</p>
+              <p className="text-gray-600 text-sm mt-1">
+                No connection right now — this check-in will sync automatically once you&apos;re back online.
+              </p>
+              <p className="text-xs text-gray-400 mt-1">Reservation {scannedId.slice(0, 12)}…</p>
             </div>
             <div className="flex gap-3">
               <button onClick={reset} className="flex-1 border border-gray-200 rounded-lg py-2 text-sm">Scan Another</button>
