@@ -14,8 +14,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const api = useApi();
   const [wizardDismissed, setWizardDismissed] = useState(false);
 
-  const { data: me } = useQuery<{
-    staff?: { marina: { id: string }; role: string };
+  const { data: me, isLoading: isLoadingMe, error: meError } = useQuery<{
+    staff?: { marina: { id: string }; role: string } | null;
     hasCompletedOnboarding?: boolean;
   }>({
     queryKey: ['me'],
@@ -29,15 +29,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const marinaId         = me?.staff?.marina?.id;
   const isOwner          = me?.staff?.role === 'owner';
+  const isResolvingStaff = !isLoaded || (!!userId && isLoadingMe);
+  const hasStaffAccess   = !!marinaId;
   // Show wizard if: owner, marina loaded, not dismissed, and onboarding not yet completed
-  const showWizard = !!marinaId && isOwner && !wizardDismissed && me?.hasCompletedOnboarding === false;
+  const showWizard = hasStaffAccess && isOwner && !wizardDismissed && me?.hasCompletedOnboarding === false;
+
+  let mainContent = children;
+  if (isResolvingStaff) {
+    mainContent = (
+      <div className="flex h-full items-center justify-center text-sm text-gray-500">
+        Loading marina access…
+      </div>
+    );
+  } else if (meError || !hasStaffAccess) {
+    mainContent = (
+      <div className="mx-auto mt-16 max-w-xl rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-950 shadow-sm">
+        <h1 className="text-lg font-semibold">Marina access required</h1>
+        <p className="mt-2 text-sm leading-6">
+          Your Lake Pass account is signed in, but it is not linked to a marina staff role yet.
+          Ask a marina owner to invite this email address, or configure the deployment owner
+          environment variables so this account can claim the marina.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gray-50">
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">{mainContent}</main>
       </div>
       {showWizard && (
         <OnboardingWizard
