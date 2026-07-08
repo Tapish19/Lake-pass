@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { useApi } from '@/lib/useApi';
+import { useOfflineApi } from '@/lib/useOfflineApi';
 import type { Boat } from '@lake-pass/shared';
 
 interface WalkInForm {
@@ -16,7 +16,7 @@ interface WalkInForm {
 }
 
 export default function WalkInModal({ onClose }: { onClose: () => void }) {
-  const api         = useApi();
+  const { api } = useOfflineApi();
   const queryClient = useQueryClient();
   const { register, handleSubmit, formState: { errors } } = useForm<WalkInForm>();
 
@@ -26,13 +26,22 @@ export default function WalkInModal({ onClose }: { onClose: () => void }) {
   });
 
   const mutation = useMutation({
-    mutationFn: (data: WalkInForm) => api.post('/reservations/walk-in', {
-      ...data,
-      addonIds: [],
-    }),
-    onSuccess: () => {
+    mutationFn: (data: WalkInForm) => api.post(
+      '/reservations/walk-in',
+      { ...data, addonIds: [] },
+      `Walk-in booking for ${data.walkInName}`,
+    ),
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ['marina-reservations'] });
       onClose();
+      if (result?.queued) {
+        // Booking was saved offline and will sync automatically — the
+        // OfflineIndicator badge shows the pending count globally, but the
+        // person who just submitted this form should also see it inline.
+        window.dispatchEvent(new CustomEvent('lake-pass-toast', {
+          detail: { message: 'Saved offline — will sync when back online.' },
+        }));
+      }
     },
   });
 
