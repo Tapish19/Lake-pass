@@ -1,5 +1,3 @@
-// path: apps/dashboard/src/lib/connectivity.ts
-
 'use client';
 
 /**
@@ -14,16 +12,17 @@ export async function canReachApp(timeoutMs = 6000): Promise<boolean> {
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    // Use GET instead of HEAD: some hosts/proxies/dev-preview environments
-    // don't handle HEAD cleanly and will error instead of responding, which
+    // Hit a dedicated, unauthenticated health-check route rather than the
+    // app's own "/" — fetching the full page can be slow (SSR/cold start)
+    // or blocked by Vercel Deployment Protection redirects, both of which
     // previously made us report "offline" while actually online.
-    const res = await fetch(window.location.origin, {
+    const res = await fetch(`${window.location.origin}/api/ping`, {
       method: 'GET',
       cache: 'no-store',
       credentials: 'same-origin',
       signal: controller.signal,
     });
-    // Any actual HTTP response (even a 404/500) means the network path
+    // Any actual HTTP response (even a non-2xx) means the network path
     // works — only treat true network failures (thrown errors) as offline.
     return !!res;
   } catch {
