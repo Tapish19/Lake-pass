@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from './useApi';
+import { canReachApp } from './connectivity';
 import { enqueueAction, flushQueue, getQueueLength, isQueueable } from './offlineQueue';
 
 /**
@@ -38,21 +39,34 @@ export function useOfflineApi() {
       flushing.current = false;
       refreshPendingCount();
     };
-    const handleOffline = () => setIsOnline(false);
+    const confirmOffline = async () => {
+      setIsOnline((await canReachApp()) ? true : false);
+    };
+    const handleOffline = () => {
+      // navigator.onLine can be wrong in some browsers/environments. Verify
+      // reachability before showing the persistent offline banner.
+      void confirmOffline();
+    };
     const handleQueueChange = () => refreshPendingCount();
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('lake-pass-offline-queue-change', handleQueueChange);
 
+    const reachabilityCheck = window.setInterval(() => {
+      if (!navigator.onLine) void confirmOffline();
+    }, 15000);
+
     // Attempt a flush on mount too, in case actions were queued in a
     // previous session and the tab reloaded while already online.
     if (navigator.onLine) handleOnline();
+    else void confirmOffline();
 
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('lake-pass-offline-queue-change', handleQueueChange);
+      window.clearInterval(reachabilityCheck);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api]);
@@ -60,12 +74,15 @@ export function useOfflineApi() {
   const offlineApi = useMemo(() => {
     const wrap = (method: 'post' | 'patch' | 'delete' | 'put') =>
       async (url: string, body: any, description: string) => {
-        const shouldQueue = !navigator.onLine && isQueueable(url);
+        const browserReportsOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+        const shouldQueue = browserReportsOffline && isQueueable(url) && !(await canReachApp());
         if (shouldQueue) {
+          setIsOnline(false);
           enqueueAction({ method, url, body, description });
           refreshPendingCount();
           return { queued: true };
         }
+        if (browserReportsOffline) setIsOnline(true);
         try {
           return await (api as any)[method](url, body);
         } catch (err: any) {
