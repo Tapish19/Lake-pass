@@ -4,6 +4,8 @@ import { AppError } from './errorHandler';
 import { prisma } from '../lib/prisma';
 import type { StaffRole } from '@lake-pass/shared';
 
+type ClerkJwtPayload = Record<string, unknown> & { sub: string };
+
 export interface AuthRequest extends Request {
   userId?:     string;
   clerkId?:    string;
@@ -23,6 +25,25 @@ export interface AuthRequest extends Request {
  * is consumed.  This is the lightweight "accept invite on first sign-in"
  * flow used by the team management feature.
  */
+function getStringClaim(payload: ClerkJwtPayload, ...keys: string[]) {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return undefined;
+}
+
+function extractClerkEmail(payload: ClerkJwtPayload) {
+  return getStringClaim(
+    payload,
+    'email',
+    'email_address',
+    'primary_email',
+    'primary_email_address',
+    'primaryEmailAddress',
+  );
+}
+
 export async function requireAuth(req: AuthRequest, _res: Response, next: NextFunction) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) throw new AppError(401, 'Unauthorized — no Bearer token');
@@ -30,9 +51,9 @@ export async function requireAuth(req: AuthRequest, _res: Response, next: NextFu
   let clerkId: string;
   let clerkEmail: string | undefined;
   try {
-    const payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! });
+    const payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! }) as ClerkJwtPayload;
     clerkId = payload.sub;
-    clerkEmail = typeof payload.email === 'string' ? payload.email : undefined;
+    clerkEmail = extractClerkEmail(payload);
   } catch {
     throw new AppError(401, 'Invalid or expired session token');
   }
@@ -51,6 +72,8 @@ export async function requireAuth(req: AuthRequest, _res: Response, next: NextFu
   }
   if (user) {
     req.userId = user.id;
+    req.clerkEmail = req.clerkEmail ?? user.email;
+    clerkEmail = clerkEmail ?? user.email;
   }
 
   // ── Invite auto-promotion ────────────────────────────────────────────────
@@ -114,7 +137,7 @@ function isConfiguredOwner(req: AuthRequest) {
   return !!req.clerkEmail && ownerEmails.has(req.clerkEmail.toLowerCase());
 }
 
-async function bootstrapFirstMarinaOwner(req: AuthRequest) {
+export async function bootstrapFirstMarinaOwner(req: AuthRequest) {
   if (!req.clerkId || req.marinaId) return;
 
   const [staffCount, marinas] = await Promise.all([
