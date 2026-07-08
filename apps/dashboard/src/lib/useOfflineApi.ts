@@ -21,9 +21,10 @@ import { enqueueAction, flushQueue, getQueueLength, isQueueable } from './offlin
 export function useOfflineApi() {
   const api = useApi();
   const [pendingCount, setPendingCount] = useState(0);
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine : true
-  );
+  // Start optimistic and only show the offline badge after a failed
+  // reachability check. Some browsers/webviews report navigator.onLine=false
+  // while the app is reachable, which made the badge appear constantly.
+  const [isOnline, setIsOnline] = useState(true);
   const flushing = useRef(false);
 
   const refreshPendingCount = () => setPendingCount(getQueueLength());
