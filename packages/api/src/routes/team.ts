@@ -3,7 +3,8 @@
  * marina (req.marinaId, set by requireAuth) rather than a URL param, the
  * same convention used by boats/reservations/payments routes.
  *
- * GET    /team            → list all staff members + pending invites
+ * GET    /team            → list all staff members, signed-in candidates, + pending invites
+ * POST   /team/members    → add an existing signed-in user to the team
  * POST   /team/invite     → invite by email (creates or refreshes a pending invite)
  * PATCH  /team/:memberId  → change a member's role
  * DELETE /team/:memberId  → remove a member OR cancel a pending invite (same id space)
@@ -40,13 +41,17 @@ router.patch('/push-token', requireAuth, requireMarinaStaff, async (req: AuthReq
 // Returns both confirmed staff members and pending invites so the UI can show
 // one unified list.
 router.get('/', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) => {
-  const [members, invites] = await Promise.all([
+  const [members, invites, signedInUsers] = await Promise.all([
     prisma.staffMember.findMany({
       where: { marinaId: req.marinaId! },
     }),
     prisma.staffInvite.findMany({
       where: { marinaId: req.marinaId! },
       orderBy: { createdAt: 'desc' },
+    }),
+    prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, clerkId: true, name: true, email: true, createdAt: true },
     }),
   ]);
 
@@ -81,7 +86,58 @@ router.get('/', requireAuth, requireMarinaStaff, async (req: AuthRequest, res) =
     expiresAt: inv.expiresAt,
   }));
 
-  res.json({ members: enriched, invites: pendingInvites });
+  const staffClerkIds = new Set(members.map((m) => m.clerkId));
+  const invitedEmails = new Set(invites.map((inv) => inv.email.toLowerCase()));
+  const candidates = signedInUsers
+    .filter((u) => !staffClerkIds.has(u.clerkId))
+    .filter((u) => !invitedEmails.has(u.email.toLowerCase()))
+    .map((u) => ({
+      id:       u.id,
+      clerkId:  u.clerkId,
+      name:     u.name,
+      email:    u.email,
+      status:   'signed_in' as const,
+      joinedAt: u.createdAt,
+    }));
+
+  res.json({ members: enriched, invites: pendingInvites, candidates });
+});
+
+// ─── POST /team/members ──────────────────────────────────────────────────────
+const AddMemberSchema = z.object({
+  userId: z.string().min(1),
+  role:   z.enum(['manager', 'staff']),
+});
+
+router.post('/members', requireAuth, requireMarinaOwner, async (req: AuthRequest, res) => {
+  const { userId, role } = AddMemberSchema.parse(req.body);
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+
+  const existingMember = await prisma.staffMember.findUnique({ where: { clerkId: user.clerkId } });
+  if (existingMember) {
+    throw new AppError(409, `${user.email} is already a team member`);
+  }
+
+  const member = await prisma.staffMember.create({
+    data: {
+      clerkId:  user.clerkId,
+      marinaId: req.marinaId!,
+      role,
+    },
+  });
+
+  await prisma.staffInvite.deleteMany({
+    where: { marinaId: req.marinaId!, email: user.email },
+  });
+
+  res.status(201).json({
+    id:      member.id,
+    clerkId: member.clerkId,
+    role:    member.role,
+    name:    user.name,
+    email:   user.email,
+    status:  'active' as const,
+  });
 });
 
 // ─── POST /team/invite ───────────────────────────────────────────────────────

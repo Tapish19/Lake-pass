@@ -21,9 +21,17 @@ interface TeamInvite {
   createdAt: string;
 }
 
+interface SignedInUser {
+  id:       string;
+  name:     string;
+  email:    string;
+  joinedAt: string;
+}
+
 interface TeamData {
   members: StaffMember[];
   invites: TeamInvite[];
+  candidates: SignedInUser[];
 }
 
 const ROLE_LABELS: Record<StaffRole, string> = {
@@ -77,6 +85,12 @@ export default function TeamPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['team'] }),
   });
 
+  const addMemberMutation = useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: 'manager' | 'staff' }) =>
+      api.post('/team/members', { userId, role }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['team'] }),
+  });
+
   const cancelInviteMutation = useMutation({
     mutationFn: (inviteId: string) => api.delete(`/team/${inviteId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['team'] }),
@@ -90,6 +104,7 @@ export default function TeamPage() {
 
   const members = data?.members ?? [];
   const invites = data?.invites ?? [];
+  const candidates = data?.candidates ?? [];
 
   return (
     <div>
@@ -226,6 +241,45 @@ export default function TeamPage() {
             </ul>
           )}
         </section>
+
+        {/* ── Signed-in users awaiting access ─────────────────────────────── */}
+        {candidates.length > 0 && (
+          <section className="bg-white rounded-xl border border-gray-200 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">
+              Signed-in users awaiting access
+              <span className="ml-2 text-sm font-normal text-gray-400">({candidates.length})</span>
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              These people have signed in to Lake Pass but do not have marina access yet. Add them to your team and choose their role.
+            </p>
+            <ul className="divide-y divide-gray-100">
+              {candidates.map(candidate => (
+                <li key={candidate.id} className="flex items-center gap-3 py-3">
+                  <div className="w-9 h-9 rounded-full bg-green-50 text-green-700 flex items-center justify-center text-sm font-semibold shrink-0">
+                    {(candidate.name ?? candidate.email ?? '?')[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{candidate.name}</p>
+                    <p className="text-xs text-gray-500 truncate">{candidate.email}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    {(['staff', 'manager'] as const).map(candidateRole => (
+                      <button
+                        key={candidateRole}
+                        type="button"
+                        disabled={addMemberMutation.isPending}
+                        onClick={() => addMemberMutation.mutate({ userId: candidate.id, role: candidateRole })}
+                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 font-medium text-gray-600 hover:border-brand-600 hover:text-brand-700 disabled:opacity-50"
+                      >
+                        Add as {ROLE_LABELS[candidateRole]}
+                      </button>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* ── Pending invites ────────────────────────────────────────────── */}
         {invites.length > 0 && (
