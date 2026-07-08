@@ -15,6 +15,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { userId, isLoaded } = useAuth();
   const api = useApi();
   const [wizardDismissed, setWizardDismissed] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { data: me, isLoading: isLoadingMe, error: meError } = useQuery<{
     staff?: { marina: { id: string }; role: string } | null;
@@ -65,10 +66,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar />
+      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto p-6">{mainContent}</main>
+        <Header onMenuClick={() => setSidebarOpen(true)} />
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{mainContent}</main>
       </div>
       {showWizard && (
         <OnboardingWizard
