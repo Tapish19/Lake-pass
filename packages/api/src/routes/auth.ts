@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import Stripe from 'stripe';
 import { prisma } from '../lib/prisma';
-import { requireAuth, AuthRequest } from '../middleware/auth';
+import { bootstrapFirstMarinaOwner, requireAuth, AuthRequest } from '../middleware/auth';
 import { AppError } from '../middleware/errorHandler';
 
 const router = Router();
@@ -27,6 +27,8 @@ router.post('/sync', requireAuth, async (req: AuthRequest, res) => {
 
 // ─── GET /api/auth/me ────────────────────────────────────────────────────────
 router.get('/me', requireAuth, async (req: AuthRequest, res) => {
+  await bootstrapFirstMarinaOwner(req);
+
   const [user, staffMember] = await Promise.all([
     req.userId
       ? prisma.user.findUnique({ where: { id: req.userId } })
