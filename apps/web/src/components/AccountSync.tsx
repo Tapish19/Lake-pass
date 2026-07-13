@@ -1,30 +1,42 @@
 'use client';
 
 import { useAuth, useUser } from '@clerk/nextjs';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { authedRequest } from '@/lib/api';
+
+const SYNC_STORAGE_PREFIX = 'lake-pass:account-sync:';
 
 export default function AccountSync() {
   const { isSignedIn, getToken } = useAuth();
   const { user } = useUser();
+  const email = user?.primaryEmailAddress?.emailAddress;
+  const phone = user?.primaryPhoneNumber?.phoneNumber;
+  const name = user?.fullName ?? user?.firstName ?? 'Lake Pass guest';
+  const syncKey = useMemo(() => {
+    if (!user?.id || !email) return null;
+    return `${SYNC_STORAGE_PREFIX}${user.id}:${email}:${name}:${phone ?? ''}`;
+  }, [email, name, phone, user?.id]);
 
   useEffect(() => {
-    if (!isSignedIn || !user) return;
-    const email = user.primaryEmailAddress?.emailAddress;
-    if (!email) return;
+    if (!isSignedIn || !email || !syncKey) return;
+
+    if (sessionStorage.getItem(syncKey)) return;
+    sessionStorage.setItem(syncKey, 'pending');
 
     getToken().then((token) => {
       if (!token) return;
       return authedRequest('/auth/sync', token, {
         method: 'POST',
         body: JSON.stringify({
-          name: user.fullName ?? user.firstName ?? 'Lake Pass guest',
+          name,
           email,
-          phone: user.primaryPhoneNumber?.phoneNumber,
+          phone,
         }),
       });
-    }).catch(() => undefined);
-  }, [getToken, isSignedIn, user]);
+    })
+      .then(() => sessionStorage.setItem(syncKey, 'complete'))
+      .catch(() => sessionStorage.removeItem(syncKey));
+  }, [email, getToken, isSignedIn, name, phone, syncKey]);
 
   return null;
 }

@@ -23,7 +23,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }>({
     queryKey: ['me'],
     queryFn:  () => api.get('/auth/me').then(r => r.data),
-    enabled:  !!userId,
+    enabled:  isLoaded && !!userId,
+    retry:    false,
   });
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const marinaId         = me?.staff?.marina?.id;
   const isOwner          = me?.staff?.role === 'owner';
-  const isResolvingStaff = !isLoaded || (!!userId && isLoadingMe);
+  const isResolvingStaff = !isLoaded || (!!userId && isLoadingMe && !me);
   const hasStaffAccess   = !!marinaId;
   // Show wizard if: owner, marina loaded, not dismissed, and onboarding not yet completed
   const showWizard = hasStaffAccess && isOwner && !wizardDismissed && me?.hasCompletedOnboarding === false;
