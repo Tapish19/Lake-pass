@@ -1,8 +1,10 @@
 'use client';
 
 import { useAuth, useUser } from '@clerk/nextjs';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useApi } from '@/lib/useApi';
+
+const SYNC_STORAGE_PREFIX = 'lake-pass:dashboard-account-sync:';
 
 /**
  * Ensures every dashboard sign-in has a matching Lake Pass User row, even
@@ -12,19 +14,28 @@ export default function AccountSync() {
   const api = useApi();
   const { isSignedIn } = useAuth();
   const { user } = useUser();
+  const email = user?.primaryEmailAddress?.emailAddress;
+  const phone = user?.primaryPhoneNumber?.phoneNumber;
+  const name = user?.fullName ?? user?.firstName ?? 'Lake Pass guest';
+  const syncKey = useMemo(() => {
+    if (!user?.id || !email) return null;
+    return `${SYNC_STORAGE_PREFIX}${user.id}:${email}:${name}:${phone ?? ''}`;
+  }, [email, name, phone, user?.id]);
 
   useEffect(() => {
-    if (!isSignedIn || !user) return;
+    if (!isSignedIn || !email || !syncKey) return;
 
-    const email = user.primaryEmailAddress?.emailAddress;
-    if (!email) return;
+    if (sessionStorage.getItem(syncKey)) return;
+    sessionStorage.setItem(syncKey, 'pending');
 
     api.post('/auth/sync', {
-      name:  user.fullName ?? user.firstName ?? 'Lake Pass guest',
+      name,
       email,
-      phone: user.primaryPhoneNumber?.phoneNumber,
-    }).catch(() => undefined);
-  }, [api, isSignedIn, user]);
+      phone,
+    })
+      .then(() => sessionStorage.setItem(syncKey, 'complete'))
+      .catch(() => sessionStorage.removeItem(syncKey));
+  }, [api, email, isSignedIn, name, phone, syncKey]);
 
   return null;
 }
