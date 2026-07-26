@@ -129,3 +129,16 @@ img { display: block; max-width: 100%; }
   .detail-gallery { height: 310px; grid-template-columns: 1fr; }.gallery-side { display: none; }.detail-title-row h1 { font-size: 34px; }.detail-layout { margin-top: 28px; }.amenity-grid { grid-template-columns: 1fr; }
   .date-grid { grid-template-columns: 1fr; }.booking-main, .summary-card { padding: 20px; }.trip-card { grid-template-columns: 1fr; }.trip-card img { width: 100%; height: 190px; }
 }
+.maps-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--teal); font-size: 14px; }
+.maps-link:hover { text-decoration: underline; }
+.maps-link svg { flex: 0 0 auto; }
+.weather-loading { margin: 8px 0 0; color: #9ca3af; font-size: 12px; }
+.weather-card { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 16px; border-radius: 12px; background: #eff6ff; }
+.weather-icon { width: 40px; height: 40px; }
+.weather-temp { margin: 0; color: #111827; font-size: 14px; font-weight: 600; }
+.weather-meta { margin: 2px 0 0; color: #6b7280; font-size: 12px; }
+.status-pill-confirmed { background: #dcfce7; color: #15803d; }
+.status-pill-pending { background: #fef9c3; color: #a16207; }
+.status-pill-checked-in { background: #dbeafe; color: #1d4ed8; }
+.status-pill-checked-out { background: #f3f4f6; color: #4b5563; }
+.status-pill-cancelled { background: #fee2e2; color: #b91c1c; }

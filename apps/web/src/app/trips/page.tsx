@@ -42,8 +42,8 @@ function MapsLink({ marina }: { marina: { name: string; address?: string; city?:
   const href = `https://www.google.com/maps/dir/?api=1&destination=${query}`;
   return (
     <a href={href} target="_blank" rel="noopener noreferrer"
-      className="inline-flex items-center gap-1.5 text-sm text-brand-600 hover:underline mt-2">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+      className="maps-link">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
         <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
         <circle cx="12" cy="9" r="2.5"/>
       </svg>
@@ -61,28 +61,28 @@ function WeatherCard({ lat, lon }: { lat: number; lon: number }) {
   }, [lat, lon]);
 
   if (!WEATHER_API_KEY) return null;
-  if (loading) return <p className="text-xs text-gray-400 mt-2">Loading weather…</p>;
+  if (loading) return <p className="weather-loading">Loading weather…</p>;
   if (!weather) return null;
 
   return (
-    <div className="flex items-center gap-3 mt-3 bg-blue-50 rounded-xl px-4 py-3">
+    <div className="weather-card">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={weather.icon} alt={weather.desc} className="w-10 h-10" />
+      <img src={weather.icon} alt={weather.desc} className="weather-icon" />
       <div>
-        <p className="text-sm font-semibold text-gray-900">{weather.temp}°F · {weather.desc}</p>
-        <p className="text-xs text-gray-500">Wind {weather.wind} mph · Humidity {weather.humidity}%</p>
+        <p className="weather-temp">{weather.temp}°F · {weather.desc}</p>
+        <p className="weather-meta">Wind {weather.wind} mph · Humidity {weather.humidity}%</p>
       </div>
     </div>
   );
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  confirmed:    'bg-green-100 text-green-700',
-  pending:      'bg-yellow-100 text-yellow-700',
-  checked_in:   'bg-blue-100 text-blue-700',
-  checked_out:  'bg-gray-100 text-gray-600',
-  cancelled:    'bg-red-100 text-red-700',
-  no_show:      'bg-red-100 text-red-700',
+  confirmed:    'status-pill-confirmed',
+  pending:      'status-pill-pending',
+  checked_in:   'status-pill-checked-in',
+  checked_out:  'status-pill-checked-out',
+  cancelled:    'status-pill-cancelled',
+  no_show:      'status-pill-cancelled',
 };
 
 function TripContent() {
