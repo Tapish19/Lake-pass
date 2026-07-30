@@ -32,6 +32,18 @@ import { AppError } from '../middleware/errorHandler';
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 const SQL_MODEL = process.env.AI_SQL_MODEL ?? 'gpt-4o-mini';
 const EXPLAIN_MODEL = process.env.AI_EXPLAIN_MODEL ?? 'gpt-4o-mini';
+interface OpenAIChatResponse {
+  choices: {
+    message: {
+      content?: string | null;
+      tool_calls?: {
+        function: {
+          arguments: string;
+        };
+      }[];
+    };
+  }[];
+}
 
 export interface ChatTurn {
   role: 'user' | 'assistant';
@@ -69,8 +81,14 @@ const GENERATE_SQL_TOOL = {
   },
 } as const;
 
-async function callOpenAI(messages: unknown[], opts: { tools?: unknown[]; toolChoice?: unknown; model: string }) {
-  const apiKey = process.env.OPENAI_API_KEY;
+async function callOpenAI(
+  messages: unknown[],
+  opts: {
+    tools?: unknown[];
+    toolChoice?: unknown;
+    model: string;
+  }
+): Promise<OpenAIChatResponse> {  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new AppError(500, 'AI Copilot is not configured (missing OPENAI_API_KEY).');
   }
@@ -94,7 +112,7 @@ async function callOpenAI(messages: unknown[], opts: { tools?: unknown[]; toolCh
     throw new AppError(502, `AI provider error (${response.status}): ${errText.slice(0, 300)}`);
   }
 
-  return response.json();
+  return (await response.json()) as OpenAIChatResponse;
 }
 
 /**
