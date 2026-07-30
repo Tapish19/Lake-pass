@@ -12,6 +12,7 @@ const nav = [
   { href: '/payments',    label: 'Payments',     icon: '💳' },
   { href: '/maintenance', label: 'Maintenance',  icon: '🔧' },
   { href: '/reports',     label: 'Reports',      icon: '📊' },
+  { href: '/copilot',     label: 'AI Copilot',   icon: '✨' },
   { href: '/team',        label: 'Team',         icon: '👥' },
   { href: '/settings',    label: 'Settings',     icon: '⚙️' },
 ];
