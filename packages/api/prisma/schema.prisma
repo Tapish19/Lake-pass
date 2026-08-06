@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Marina {
-  id              String        @id @default(cuid())
+  id              String   @id @default(cuid())
   name            String
   lake            String
   address         String
@@ -19,16 +19,18 @@ model Marina {
   phone           String?
   website         String?
   logoUrl         String?
-  isActive        Boolean       @default(true)
+  isActive        Boolean  @default(true)
   stripeAccountId String?
-  widgetColor     String?       @default("#1d6fdb")
-  widgetFont      String?       @default("system-ui")
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  widgetColor     String?  @default("#1d6fdb")
+  widgetFont      String?  @default("system-ui")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  boats           Boat[]
-  staff           StaffMember[]
-  invites         StaffInvite[]
+  boats         Boat[]
+  staff         StaffMember[]
+  invites       StaffInvite[]
+  addons        Addon[]
+  calendarFeeds CalendarFeed[]
 
   @@map("marinas")
 }
@@ -46,18 +48,19 @@ model Boat {
   photoUrls        String[]
   isActive         Boolean    @default(true)
   status           BoatStatus @default(available)
-  // Minutes of buffer required between reservations (e.g. 60 = 1h turnaround)
   turnaroundBuffer Int        @default(0)
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
-  marina           Marina         @relation(fields: [marinaId], references: [id])
-  reservations     Reservation[]
-  reviews          Review[]
-  blockouts        Blockout[]
-  favorites        Favorite[]
-  maintenanceLogs  MaintenanceLog[]
+  marina          Marina           @relation(fields: [marinaId], references: [id])
+  reservations    Reservation[]
+  reviews         Review[]
+  blockouts       Blockout[]
+  favorites       Favorite[]
+  maintenanceLogs MaintenanceLog[]
+  calendarFeeds   CalendarFeed[]
 
+  @@index([marinaId])
   @@map("boats")
 }
 
@@ -68,41 +71,42 @@ enum BoatStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  clerkId      String   @unique
-  name         String
-  email        String   @unique
-  phone        String?
-  licenseUrl   String?
-  insuranceUrl String?
-  pushToken    String?
-  // Emergency contact
+  id                       String   @id @default(cuid())
+  clerkId                  String   @unique
+  name                     String
+  email                    String   @unique
+  phone                    String?
+  licenseUrl               String?
+  insuranceUrl             String?
+  pushToken                String?
   emergencyContactName     String?
   emergencyContactPhone    String?
   emergencyContactRelation String?
-  // Stripe customer ID for saved payment methods
   stripeCustomerId         String?
-  // GDPR/CCPA compliance
-  deletedAt             DateTime?
-  dataExportRequestedAt DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  deletedAt                DateTime?
+  dataExportRequestedAt    DateTime?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
-  reservations Reservation[]
-  reviews      Review[]
-  favorites    Favorite[]
+  reservations       Reservation[]
+  reviews            Review[]
+  favorites          Favorite[]
+  signedWaivers      SignedWaiver[]
+  complianceRequests ComplianceRequest[]
 
   @@map("users")
 }
 
 model StaffMember {
-  id       String    @id @default(cuid())
-  marinaId String
-  clerkId  String    @unique
-  role     StaffRole @default(staff)
+  id        String    @id @default(cuid())
+  marinaId  String
+  clerkId   String    @unique
+  role      StaffRole @default(staff)
+  pushToken String?
 
-  marina   Marina    @relation(fields: [marinaId], references: [id])
+  marina Marina @relation(fields: [marinaId], references: [id])
 
+  @@index([marinaId])
   @@map("staff_members")
 }
 
@@ -135,47 +139,51 @@ model Addon {
   description String?
   createdAt   DateTime @default(now())
 
+  marina            Marina             @relation(fields: [marinaId], references: [id])
   reservationAddons ReservationAddon[]
 
+  @@index([marinaId])
   @@map("addons")
 }
 
 model Reservation {
-  id              String            @id @default(cuid())
-  boatId          String
-  userId          String
-  startDate       DateTime
-  endDate         DateTime
-  status          ReservationStatus @default(pending)
-  paymentStatus   PaymentStatus     @default(unpaid)
-  rentalAmount    Float?
-  addonAmount     Float?
-  platformFee     Float?
-  totalAmount     Float?
-  depositAmount   Float?
-  notes           String?
-  walkInName      String?
-  walkInPhone     String?
-  walkInEmail     String?
-  // Waiver
-  waiverSignedAt      DateTime?
-  waiverIpAddress     String?
-  waiverSignerName    String?
-  waiverVersion       String?
-  waiverTextSnapshot  String?
-  // Stripe
-  stripeSessionId         String?
-  securityDepositHoldId   String?
-  checkedInAt     DateTime?
-  checkedOutAt    DateTime?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id                    String            @id @default(cuid())
+  boatId                String
+  userId                String
+  startDate             DateTime
+  endDate               DateTime
+  status                ReservationStatus @default(pending)
+  paymentStatus         PaymentStatus     @default(unpaid)
+  rentalAmount          Float?
+  addonAmount           Float?
+  platformFee           Float?
+  totalAmount           Float?
+  depositAmount         Float?
+  notes                 String?
+  walkInName            String?
+  walkInPhone           String?
+  walkInEmail           String?
+  waiverSignedAt        DateTime?
+  waiverIpAddress       String?
+  waiverSignerName      String?
+  waiverVersion         String?
+  waiverTextSnapshot    String?
+  stripeSessionId       String?
+  stripePaymentIntentId String?
+  securityDepositHoldId String?
+  checkedInAt           DateTime?
+  checkedOutAt          DateTime?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
-  boat             Boat               @relation(fields: [boatId], references: [id])
-  user             User               @relation(fields: [userId], references: [id])
-  addons           ReservationAddon[]
-  notifications    NotificationLog[]
+  boat          Boat               @relation(fields: [boatId], references: [id])
+  user          User               @relation(fields: [userId], references: [id])
+  addons        ReservationAddon[]
+  notifications NotificationLog[]
 
+  @@index([boatId, startDate, endDate])
+  @@index([userId])
+  @@index([stripePaymentIntentId])
   @@map("reservations")
 }
 
@@ -189,6 +197,8 @@ model ReservationAddon {
   reservation Reservation @relation(fields: [reservationId], references: [id])
   addon       Addon       @relation(fields: [addonId], references: [id])
 
+  @@index([reservationId])
+  @@index([addonId])
   @@map("reservation_addons")
 }
 
@@ -221,6 +231,7 @@ model Review {
   user User @relation(fields: [userId], references: [id])
 
   @@unique([boatId, userId])
+  @@index([userId])
   @@map("reviews")
 }
 
@@ -234,6 +245,7 @@ model Blockout {
 
   boat Boat @relation(fields: [boatId], references: [id])
 
+  @@index([boatId, startDate, endDate])
   @@map("blockouts")
 }
 
@@ -247,6 +259,7 @@ model Favorite {
   boat Boat @relation(fields: [boatId], references: [id])
 
   @@unique([userId, boatId])
+  @@index([boatId])
   @@map("favorites")
 }
 
@@ -261,6 +274,7 @@ model NotificationLog {
 
   reservation Reservation @relation(fields: [reservationId], references: [id])
 
+  @@index([reservationId])
   @@map("notification_logs")
 }
 
@@ -272,6 +286,8 @@ model ComplianceRequest {
   createdAt   DateTime @default(now())
   completedAt DateTime?
   notes       String?
+
+  user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@map("compliance_requests")
@@ -289,5 +305,44 @@ model MaintenanceLog {
 
   boat Boat @relation(fields: [boatId], references: [id])
 
+  @@index([boatId])
   @@map("maintenance_logs")
+}
+
+model CalendarFeed {
+  id             String   @id @default(cuid())
+  marinaId       String
+  boatId         String?
+  label          String?
+  sourceType     String
+  url            String?
+  lastSyncedAt   DateTime?
+  lastSyncStatus String?
+  lastSyncError  String?
+  importedCount  Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  marina Marina @relation(fields: [marinaId], references: [id])
+  boat   Boat?  @relation(fields: [boatId], references: [id])
+
+  @@index([marinaId])
+  @@index([boatId])
+  @@map("calendar_feeds")
+}
+
+model SignedWaiver {
+  id           String   @id @default(cuid())
+  userId       String
+  version      String
+  signerName   String
+  ipAddress    String
+  textSnapshot String
+  signedAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, version])
+  @@map("signed_waivers")
 }
