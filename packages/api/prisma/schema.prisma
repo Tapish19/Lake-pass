@@ -88,10 +88,10 @@ model User {
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 
-  reservations       Reservation[]
-  reviews            Review[]
-  favorites          Favorite[]
-  signedWaivers      SignedWaiver[]
+  reservations      Reservation[]
+  reviews           Review[]
+  favorites         Favorite[]
+  signedWaivers     SignedWaiver[]
   complianceRequests ComplianceRequest[]
 
   @@map("users")
@@ -139,8 +139,8 @@ model Addon {
   description String?
   createdAt   DateTime @default(now())
 
-  marina            Marina             @relation(fields: [marinaId], references: [id])
-  reservationAddons ReservationAddon[]
+  marina              Marina             @relation(fields: [marinaId], references: [id])
+  reservationAddons   ReservationAddon[]
 
   @@index([marinaId])
   @@map("addons")
