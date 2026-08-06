@@ -57,7 +57,9 @@ const allowedOriginPatterns = [
 function isAllowedOrigin(origin: string): boolean {
   return (
     allowedOrigins.has(origin) ||
-    allowedOriginPatterns.some((pattern) => pattern.test(origin))
+    allowedOriginPatterns.some(
+      (pattern) => pattern.test(origin),
+    )
   );
 }
 
@@ -74,7 +76,9 @@ app.use(
       }
 
       callback(
-        new Error(`Origin ${origin} is not allowed by CORS`),
+        new Error(
+          `Origin ${origin} is not allowed by CORS`,
+        ),
       );
     },
     credentials: true,
@@ -82,7 +86,11 @@ app.use(
 );
 
 app.use(
-  morgan(process.env.NODE_ENV === 'test' ? 'tiny' : 'dev'),
+  morgan(
+    process.env.NODE_ENV === 'test'
+      ? 'tiny'
+      : 'dev',
+  ),
 );
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -96,7 +104,8 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: {
-    error: 'Too many requests, please try again later.',
+    error:
+      'Too many requests, please try again later.',
   },
   skip: skipRateLimit,
 });
@@ -107,7 +116,8 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: {
-    error: 'Too many auth requests, please try again later.',
+    error:
+      'Too many auth requests, please try again later.',
   },
   skip: skipRateLimit,
 });
@@ -118,7 +128,8 @@ const paymentLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: {
-    error: 'Too many payment requests, please try again later.',
+    error:
+      'Too many payment requests, please try again later.',
   },
   skip: (req) =>
     process.env.NODE_ENV === 'test' ||
@@ -168,12 +179,22 @@ app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/marinas', marinasRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/boats', boatsRoutes);
-app.use('/api/reservations', reservationsRoutes);
-app.use('/api/payments', paymentLimiter, paymentsRoutes);
+app.use(
+  '/api/reservations',
+  reservationsRoutes,
+);
+app.use(
+  '/api/payments',
+  paymentLimiter,
+  paymentsRoutes,
+);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/addons', addonsRoutes);
 app.use('/api/favorites', favoritesRoutes);
-app.use('/api/maintenance', maintenanceRoutes);
+app.use(
+  '/api/maintenance',
+  maintenanceRoutes,
+);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/weather', weatherRoutes);
 app.use('/api/ai', aiRoutes);
