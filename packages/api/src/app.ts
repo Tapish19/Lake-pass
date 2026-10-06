@@ -21,6 +21,7 @@ import calendarRoutes from './routes/calender';
 import weatherRoutes from './routes/weather';
 import aiRoutes from './routes/ai';
 import { errorHandler } from './middleware/errorHandler';
+import { mcpRouter } from './mcp/router';
 
 const app = express();
 
@@ -176,6 +177,7 @@ app.get('/health', (_req, res) => {
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/mcp', mcpRouter);
 app.use('/api/marinas', marinasRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/boats', boatsRoutes);
