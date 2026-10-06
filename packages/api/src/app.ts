@@ -68,8 +68,7 @@ function isAllowedOrigin(origin: string): boolean {
 
 app.use(helmet());
 
-app.use(
-  cors({
+const apiCors = cors({
     origin(origin, callback) {
       if (!origin || isAllowedOrigin(origin)) {
         callback(null, true);
@@ -83,8 +82,21 @@ app.use(
       );
     },
     credentials: true,
-  }),
-);
+  });
+
+const publicMcpCors = cors({
+  origin: '*',
+  methods: ['POST', 'GET', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Accept', 'MCP-Protocol-Version', 'Mcp-Session-Id', 'Last-Event-ID'],
+});
+
+app.use((req, res, next) => {
+  if (req.path === '/mcp' || req.path.startsWith('/mcp/')) {
+    publicMcpCors(req, res, next);
+    return;
+  }
+  apiCors(req, res, next);
+});
 
 app.use(
   morgan(

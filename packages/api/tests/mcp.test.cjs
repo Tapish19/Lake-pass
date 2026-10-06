@@ -14,29 +14,25 @@ const prisma = {
 };
 require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { prisma } };
 const { mcpRouter } = require('../dist/api/src/mcp/router.js');
-const token = 'test-only-key-012345678901234567890123456789';
 let httpServer, url, client;
 before(async () => {
-  process.env.MCP_API_KEY = token;
   const app = express();
   app.use(express.json()); app.use('/mcp', mcpRouter);
   httpServer = app.listen(0, '127.0.0.1');
   await new Promise(resolve => httpServer.once('listening', resolve));
   url = new URL(`http://127.0.0.1:${httpServer.address().port}/mcp`);
   client = new Client({ name: 'test', version: '1.0.0' });
-  await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  await client.connect(new StreamableHTTPClientTransport(url));
 });
-after(async () => { await client?.close(); await new Promise(resolve => httpServer.close(resolve)); delete process.env.MCP_API_KEY; });
+after(async () => { await client?.close(); await new Promise(resolve => httpServer.close(resolve)); });
 const data = r => JSON.parse(r.content[0].text);
-test('authentication, disabled endpoint, and key rotation', async () => {
-  assert.equal((await fetch(url)).status, 401);
-  assert.equal((await fetch(url, { headers: { Authorization: 'Bearer wrong' } })).status, 401);
-  process.env.MCP_API_KEY = 'rotated-token-012345678901234567890123456789';
-  assert.equal((await fetch(url, { headers: { Authorization: `Bearer ${token}` } })).status, 401);
-  delete process.env.MCP_API_KEY;
-  assert.equal((await fetch(url)).status, 503);
-  process.env.MCP_API_KEY = token;
-  assert.equal((await fetch(url, { headers: { Authorization: `Bearer ${token}` } })).status, 405);
+test('public endpoint requires no credentials and rejects unsupported methods', async () => {
+  for (const method of ['GET', 'DELETE']) {
+    const response = await fetch(url, { method });
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get('www-authenticate'), null);
+    assert.equal(response.headers.get('allow'), 'POST');
+  }
 });
 test('HTTP MCP initialization and tool discovery', async () => {
   const { tools } = await client.listTools();

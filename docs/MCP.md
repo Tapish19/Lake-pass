@@ -11,32 +11,25 @@ IDs, or blockout notes. Listing tools support `limit` (1–100, default 25) and
 
 1. Install with `pnpm install` and configure the existing API environment,
    including `DATABASE_URL`.
-2. Generate a dedicated token with
-   `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
-3. Set `MCP_API_KEY` to that token in the API environment, then run
-   `pnpm --filter @lake-pass/api dev`.
-4. Connect a Streamable HTTP client to `http://localhost:3001/mcp` with
-   `Authorization: Bearer <your-token>`.
+2. Run `pnpm --filter @lake-pass/api dev`.
+3. Connect a Streamable HTTP client to `http://localhost:3001/mcp`.
+   The endpoint is public: no API key, bearer header, or sign-in is required.
 
-An unset or shorter-than-32-character key disables the endpoint (503).
-Invalid or missing tokens return 401. GET and DELETE return 405 because
+GET and DELETE return 405 because
 the endpoint does not keep sessions or an SSE stream. Each POST creates
 an isolated server/transport and closes it when the response finishes.
 
 ## Render
 
 Deploy the API changes using your existing Render build/start commands.
-Set `MCP_API_KEY` on that API service, then use
-`https://<your-api-service>.onrender.com/mcp` as the client URL. Keep the
-token in client secrets, never in frontend bundles or version control.
-Rotating the environment variable revokes the old key.
+Use `https://<your-api-service>.onrender.com/mcp` as the client URL.
+No additional MCP environment variables are needed.
 
-Clients must support a configured bearer header. This endpoint does not
-implement OAuth discovery or an interactive sign-in flow. A client requiring
-OAuth needs a separate integration. The dedicated key grants catalog and
-availability access across active marinas, not user or staff privileges.
-Requests remain subject to the API's existing rate limit and CORS policy;
-browser clients must have their exact origin listed in `ALLOWED_ORIGINS`.
+Anyone can discover and call the three read-only tools across active marinas.
+Requests remain subject to the API's existing rate limit. The MCP endpoint
+allows browser clients from any origin; other API routes retain their existing
+CORS policy. Opening the URL in a browser returns 405 because MCP clients
+communicate using protocol POST requests.
 
 ## Availability
 
